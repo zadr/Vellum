@@ -232,13 +232,3 @@ public extension Book.TableOfContent {
 		return try decoder.decode([Book.TableOfContent].self, from: data)
 	}
 }
-
-
-public protocol JSONRepresentable {}
-extension Int : JSONRepresentable {}
-extension Double : JSONRepresentable {}
-extension Float : JSONRepresentable {}
-extension Bool : JSONRepresentable {}
-extension Sequence where Element : JSONRepresentable {}
-extension Dictionary where Key : JSONRepresentable, Value : JSONRepresentable {}
-
