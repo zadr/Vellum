@@ -51,7 +51,7 @@ class ListViewController: UIViewController {
 				image: nil,
 				primaryAction: nil,
 				menu: UIMenu(
-					title: "Menu",
+					title: "Bookshelves",
 					image: nil,
 					identifier: nil,
 					options: .displayInline,
@@ -66,11 +66,12 @@ class ListViewController: UIViewController {
 							self.tableView.reloadData()
 						}
 					} + [
-						UIAction(title: "New List", image: UIImage(systemName: "plus.circle"), handler: { action in
+						UIAction(title: "New shelf", image: UIImage(systemName: "plus.circle"), handler: { action in
 							let alert = UIAlertController(title: "List Name", message: nil, preferredStyle: .alert)
 							alert.addTextField { textField in
 								textField.clearButtonMode = .whileEditing
 								textField.autocapitalizationType = .words
+								textField.placeholder = "Awesome books"
 							}
 							alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
 							alert.addAction(UIAlertAction(title: "Add", style: .default, handler: { action in
@@ -97,8 +98,24 @@ class ListViewController: UIViewController {
 					]
 				)
 			),
+
 			UIBarButtonItem.flexibleSpace(),
-			UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(add))
+			UIBarButtonItem(
+				systemItem: .add,
+				primaryAction: nil,
+				menu: UIMenu(
+					title: "Enter ISBN",
+					options: .displayInline,
+					children: [
+						UIAction(title: "Scan barcode") { _ in
+							self.scanISBN()
+						},
+						UIAction(title: "Manual entry") { action in
+							self.enterISBN()
+						}
+					]
+				)
+			)
 		]
 	}
 
@@ -140,10 +157,51 @@ class ListViewController: UIViewController {
 }
 
 extension ListViewController {
-	@objc func add() {
+	func enterISBN() {
+		let alert = UIAlertController(title: "List Name", message: nil, preferredStyle: .alert)
+		alert.addTextField { textField in
+			textField.clearButtonMode = .whileEditing
+			textField.autocapitalizationType = .words
+			textField.placeholder = "987-1234567890"
+		}
+
+		alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
+		alert.addAction(UIAlertAction(title: "Add", style: .default, handler: { action in
+			// do something better to remove all non-numeric
+			let isbn = (alert.textFields?.first?.text ?? "")
+				.replacingOccurrences(of: "-", with: "")
+				.replacingOccurrences(of: " ", with: "")
+
+			if isbn.isEmpty {
+				print("empty list") // show alert
+				return
+			}
+
+			if isbn.count != 10 && isbn.count != 13 {
+				print("invalid isbn") // show alert
+				return
+			}
+
+			self.insert(isbn: isbn)
+		}))
+
+		self.present(alert, animated: true, completion: nil)
+	}
+
+	func scanISBN() {
 		let scannerViewController = ScannerViewController()
 		scannerViewController.delegate = self
 		navigationController?.pushViewController(scannerViewController, animated: true)
+	}
+
+	func insert(isbn: String) {
+		if !requesting.contains(isbn) && !data.flatMap({ $0.isbn13 ?? [] }).contains(isbn) {
+			haptic.notificationOccurred(.success)
+
+			requesting.append(isbn)
+
+			kickstart()
+		}
 	}
 
 	func kickstart() {
@@ -194,13 +252,7 @@ extension ListViewController {
 
 extension ListViewController : ScannerViewControllerDelegate {
 	func scannerViewController(_ scannerViewController: ScannerViewController, didScan isbn: String) {
-		if !requesting.contains(isbn) && !data.flatMap({ $0.isbn13 ?? [] }).contains(isbn) {
-			haptic.notificationOccurred(.success)
-
-			requesting.append(isbn)
-
-			kickstart()
-		}
+		insert(isbn: isbn)
 
 		navigationController?.popViewController(animated: true)
 	}
