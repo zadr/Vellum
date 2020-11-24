@@ -66,34 +66,8 @@ class ListViewController: UIViewController {
 							self.tableView.reloadData()
 						}
 					} + [
-						UIAction(title: "New shelf", image: UIImage(systemName: "plus.circle"), handler: { action in
-							let alert = UIAlertController(title: "List Name", message: nil, preferredStyle: .alert)
-							alert.addTextField { textField in
-								textField.clearButtonMode = .whileEditing
-								textField.autocapitalizationType = .words
-								textField.placeholder = "Awesome books"
-							}
-							alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
-							alert.addAction(UIAlertAction(title: "Add", style: .default, handler: { action in
-								let listName = alert.textFields?.first?.text ?? ""
-								if listName.isEmpty {
-									print("empty list") // show alert
-									return
-								}
-
-								if self.lists.contains(listName) {
-									print("cannot re-use list name") // show alert
-									return
-								}
-
-								self.lists += [ listName ]
-								self.activeList = listName
-								self.updateData()
-								self.tableView.reloadData()
-								self.updateToolbarItems()
-							}))
-
-							self.present(alert, animated: true, completion: nil)
+						UIAction(title: "New shelf", image: UIImage(systemName: "plus.circle"), handler: { _ in
+							self.addShelf()
 						})
 					]
 				)
@@ -157,6 +131,36 @@ class ListViewController: UIViewController {
 }
 
 extension ListViewController {
+	func addShelf() {
+		let alert = UIAlertController(title: "List Name", message: nil, preferredStyle: .alert)
+		alert.addTextField { textField in
+			textField.clearButtonMode = .whileEditing
+			textField.autocapitalizationType = .words
+			textField.placeholder = "Awesome books"
+		}
+		alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
+		alert.addAction(UIAlertAction(title: "Add", style: .default, handler: { action in
+			let listName = alert.textFields?.first?.text ?? ""
+			if listName.isEmpty {
+				print("empty list") // show alert
+				return
+			}
+
+			if self.lists.contains(listName) {
+				print("cannot re-use list name") // show alert
+				return
+			}
+
+			self.lists += [ listName ]
+			self.activeList = listName
+			self.updateData()
+			self.tableView.reloadData()
+			self.updateToolbarItems()
+		}))
+
+		present(alert, animated: true, completion: nil)
+	}
+
 	func enterISBN() {
 		let alert = UIAlertController(title: "List Name", message: nil, preferredStyle: .alert)
 		alert.addTextField { textField in
@@ -200,11 +204,11 @@ extension ListViewController {
 
 			requesting.append(isbn)
 
-			kickstart()
+			makeNextRequestIfIdle()
 		}
 	}
 
-	func kickstart() {
+	func makeNextRequestIfIdle() {
 		if task != nil {
 			return
 		}
@@ -237,7 +241,7 @@ extension ListViewController {
 				}
 
 				DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-					self.kickstart()
+					self.makeNextRequestIfIdle()
 				}
 
 				print(book)
