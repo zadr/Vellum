@@ -5,6 +5,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 	var window: UIWindow?
 
 	func application(_ application: UIApplication, willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
+		UserDefaults.standard.register(defaults: [
+			"active-list": "Main",
+			"lists": ["Main"]
+		])
+
 		window = UIWindow(frame: UIScreen.main.bounds)
 		window?.rootViewController = UINavigationController(rootViewController: ListViewController())
 
