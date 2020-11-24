@@ -66,7 +66,7 @@ class ListViewController: UIViewController {
 							self.tableView.reloadData()
 						}
 					} + [
-						UIAction(title: "New List", handler: { action in
+						UIAction(title: "New List", image: UIImage(systemName: "plus.circle"), handler: { action in
 							let alert = UIAlertController(title: "List Name", message: nil, preferredStyle: .alert)
 							alert.addTextField { textField in
 								textField.clearButtonMode = .whileEditing
