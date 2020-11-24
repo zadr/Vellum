@@ -11,6 +11,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 		])
 
 		window = UIWindow(frame: UIScreen.main.bounds)
+		window?.tintColor = UIColor(red: (195.0 / 255.0), green: (95.0 / 255.0), blue: (235.0 / 255.0), alpha: 1.0)
 		window?.rootViewController = UINavigationController(rootViewController: ListViewController())
 
 		return true
