@@ -132,7 +132,7 @@ class ListViewController: UIViewController {
 
 extension ListViewController {
 	func addShelf() {
-		let alert = UIAlertController(title: "List Name", message: nil, preferredStyle: .alert)
+		let alert = UIAlertController(title: "Bookshelf name", message: nil, preferredStyle: .alert)
 		alert.addTextField { textField in
 			textField.clearButtonMode = .whileEditing
 			textField.autocapitalizationType = .words
@@ -189,7 +189,7 @@ extension ListViewController {
 			self.insert(isbn: isbn)
 		}))
 
-		self.present(alert, animated: true, completion: nil)
+		present(alert, animated: true, completion: nil)
 	}
 
 	func scanISBN() {
