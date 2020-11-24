@@ -43,6 +43,36 @@ class ListViewController: UIViewController {
 		true
 	}
 
+	override func viewDidLoad() {
+		super.viewDidLoad()
+
+		updateToolbarItems()
+
+		haptic.prepare()
+
+		view.addSubview(tableView)
+
+		tableView.delegate = self
+		tableView.dataSource = self
+		tableView.rowHeight = UITableView.automaticDimension
+		tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+	}
+
+	override func viewWillAppear(_ animated: Bool) {
+		super.viewWillAppear(animated)
+
+		navigationController?.isNavigationBarHidden = true
+		navigationController?.isToolbarHidden = false
+	}
+
+	override func viewWillLayoutSubviews() {
+		super.viewWillLayoutSubviews()
+
+		tableView.frame = view.bounds
+	}
+}
+
+extension ListViewController {
 	func updateToolbarItems() {
 		toolbarItems = [
 			UIBarButtonItem.flexibleSpace(),
@@ -99,34 +129,6 @@ class ListViewController: UIViewController {
 		} else {
 			data = []
 		}
-	}
-
-	override func viewDidLoad() {
-		super.viewDidLoad()
-
-		updateToolbarItems()
-
-		haptic.prepare()
-
-		view.addSubview(tableView)
-
-		tableView.delegate = self
-		tableView.dataSource = self
-		tableView.rowHeight = UITableView.automaticDimension
-		tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
-	}
-
-	override func viewWillAppear(_ animated: Bool) {
-		super.viewWillAppear(animated)
-
-		navigationController?.isNavigationBarHidden = true
-		navigationController?.isToolbarHidden = false
-	}
-
-	override func viewWillLayoutSubviews() {
-		super.viewWillLayoutSubviews()
-
-		tableView.frame = view.bounds
 	}
 }
 
@@ -280,4 +282,3 @@ extension ListViewController : UITableViewDelegate {
 		tableView.deselectRow(at: indexPath, animated: true)
 	}
 }
-
