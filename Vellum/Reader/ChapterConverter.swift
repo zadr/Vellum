@@ -49,6 +49,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var fontSize = 0.0
 		/// How many paragraphs have started inside the element, so its top border goes on the first.
 		var paragraphCount = 0
+		/// The style of content the book adds after the element, generated when it closes.
+		var after: CSSStyle?
 	}
 
 	/// The style that applies to text at the current point, after inheriting from every open element.
@@ -115,6 +117,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	private var rowCellLengths: [Int]?
 	private var cellStart = 0
 	private static let tab = "\t"
+	/// How many generated quotes are open, so nested quotes alternate marks.
+	private var quoteDepth = 0
 
 	private init(file: URL, typography: ReaderTypography, textArea: CGSize, styleSheets: StyleSheetCache) {
 		self.file = file
@@ -224,6 +228,13 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		elements.append(element)
 		elements[elements.count - 1].fontSize = typography.size * currentStyle().fontScale
 
+		if typography.styles.bookTextEffects {
+			if let before = styleSheet.generatedStyle(forTag: name, classes: classes, after: false).generatedContent(quoteDepth: &quoteDepth) {
+				appendText(before, collapsingWhitespace: false)
+			}
+			elements[elements.count - 1].after = styleSheet.generatedStyle(forTag: name, classes: classes, after: true)
+		}
+
 		if element.block != nil {
 			pendingSpaceBefore = max(pendingSpaceBefore, verticalSpace(of: elements[elements.count - 1], side: "top"))
 		}
@@ -250,6 +261,10 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		// Tolerate slightly mismatched markup by closing back to the matching element.
 		guard let index = elements.lastIndex(where: { $0.name == name }) else { return }
+
+		if let after = elements[index].after?.generatedContent(quoteDepth: &quoteDepth) {
+			appendText(after, collapsingWhitespace: false)
+		}
 
 		if typography.styles.bookTables, endTableElement(name) {
 			elements.removeSubrange(index...)

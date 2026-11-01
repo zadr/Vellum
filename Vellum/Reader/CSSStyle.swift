@@ -155,6 +155,51 @@ nonisolated struct CSSStyle: Sendable {
 		return width > 0 ? min(width, 8) : nil
 	}
 
+	/// The text a `::before` or `::after` rule adds: quoted strings, with CSS escapes, and quote marks.
+	/// `quoteDepth` counts open quotes, so nested quotes alternate between double and single marks.
+	func generatedContent(quoteDepth: inout Int) -> String? {
+		guard let content = properties["content"]?.trimmingCharacters(in: .whitespaces), content != "none", content != "normal" else { return nil }
+
+		var text = ""
+		var rest = content[...]
+		while let first = rest.first {
+			if first == "\"" || first == "'" {
+				rest = rest.dropFirst()
+				var literal = ""
+				while let character = rest.first, character != first {
+					rest = rest.dropFirst()
+					if character == "\\" {
+						let hex = rest.prefix { $0.isHexDigit }.prefix(6)
+						if !hex.isEmpty, let value = UInt32(hex, radix: 16), let scalar = Unicode.Scalar(value) {
+							literal.unicodeScalars.append(scalar)
+							rest = rest.dropFirst(hex.count)
+							if rest.first == " " { rest = rest.dropFirst() }
+						} else if let escaped = rest.first {
+							literal.append(escaped)
+							rest = rest.dropFirst()
+						}
+					} else {
+						literal.append(character)
+					}
+				}
+				rest = rest.dropFirst()
+				text += literal
+			} else if rest.hasPrefix("open-quote") {
+				text += quoteDepth.isMultiple(of: 2) ? "“" : "‘"
+				quoteDepth += 1
+				rest = rest.dropFirst("open-quote".count)
+			} else if rest.hasPrefix("close-quote") {
+				quoteDepth = max(quoteDepth - 1, 0)
+				text += quoteDepth.isMultiple(of: 2) ? "”" : "’"
+				rest = rest.dropFirst("close-quote".count)
+			} else {
+				// Counters, attributes, and images aren't supported; skip to the next part.
+				rest = rest.drop { $0 != " " }.dropFirst()
+			}
+		}
+		return text.isEmpty ? nil : text
+	}
+
 	var isHidden: Bool {
 		value("display") == "none"
 	}
