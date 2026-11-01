@@ -42,13 +42,14 @@ struct ReaderAppearanceSheet: View {
 					.pickerStyle(.segmented)
 				}
 
-				Section("Text") {
+				Section {
 					Picker("Font", selection: $font) {
 						ForEach(ReaderFont.allCases) { font in
 							Text(font.label)
 								.tag(font)
 						}
 					}
+					Toggle("Book Fonts", isOn: $styles.bookFonts)
 
 					ReaderSettingSlider(
 						title: "Size",
@@ -59,6 +60,7 @@ struct ReaderAppearanceSheet: View {
 						largerImage: "textformat.size.larger",
 						valueText: Self.percent
 					)
+					Toggle("Book Text Sizes", isOn: $styles.bookTextSizes)
 
 					Picker("Justification", selection: $styles.justification) {
 						ForEach(ReaderStyleSettings.Justification.allCases) { option in
@@ -66,11 +68,17 @@ struct ReaderAppearanceSheet: View {
 								.tag(option)
 						}
 					}
+
+					Toggle("Book Drop Caps", isOn: $styles.bookDropCaps)
+					Toggle("Book Text Effects", isOn: $styles.bookTextEffects)
+				} header: {
+					Text("Text")
+				} footer: {
+					Text("Text effects are small caps, capitals, letter spacing, underlines, and text the book’s styles add.")
 				}
 
-				Section {
+				Section("Spacing") {
 					Toggle("Book Line Height", isOn: $styles.bookLineHeight)
-
 					if !styles.bookLineHeight {
 						ReaderSettingSlider(
 							title: "Line Height",
@@ -84,7 +92,6 @@ struct ReaderAppearanceSheet: View {
 					}
 
 					Toggle("Book Paragraph Spacing", isOn: $styles.bookParagraphSpacing)
-
 					if !styles.bookParagraphSpacing {
 						ReaderSettingSlider(
 							title: "Paragraph Spacing",
@@ -96,11 +103,12 @@ struct ReaderAppearanceSheet: View {
 							valueText: Self.multiple
 						)
 					}
-				} header: {
-					Text("Spacing")
+
+					Toggle("Book Indents", isOn: $styles.bookIndents)
+					Toggle("Book Margins", isOn: $styles.bookMargins)
 				}
 
-				Section("Page") {
+				Section {
 					ReaderSettingSlider(
 						title: "Column Width",
 						value: $columnWidth,
@@ -110,22 +118,14 @@ struct ReaderAppearanceSheet: View {
 						largerImage: "arrow.left.and.line.vertical.and.arrow.right",
 						valueText: Self.points
 					)
-				}
 
-				Section {
-					Toggle("Text Sizes", isOn: $styles.bookTextSizes)
-					Toggle("Paragraph Indents", isOn: $styles.bookIndents)
-					Toggle("Margins", isOn: $styles.bookMargins)
-					Toggle("Text Effects", isOn: $styles.bookTextEffects)
-					Toggle("Fonts", isOn: $styles.bookFonts)
-					Toggle("Borders and Rules", isOn: $styles.bookBorders)
-					Toggle("Tables", isOn: $styles.bookTables)
-					Toggle("Page Breaks and Keeps", isOn: $styles.bookPageBreaks)
-					Toggle("Drop Caps", isOn: $styles.bookDropCaps)
+					Toggle("Book Page Breaks", isOn: $styles.bookPageBreaks)
+					Toggle("Book Borders and Rules", isOn: $styles.bookBorders)
+					Toggle("Book Tables", isOn: $styles.bookTables)
 				} header: {
-					Text("Book Styles")
+					Text("Page")
 				} footer: {
-					Text("Turn these off to set every book the same way, whatever its own styles say.")
+					Text("Settings starting with “Book” follow each book’s own design. Turn one off to set every book the same way.")
 				}
 
 				Section {
