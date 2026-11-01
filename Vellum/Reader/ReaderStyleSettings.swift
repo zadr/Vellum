@@ -32,9 +32,11 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 	var bookIndents = true
 	/// Inset blocks like quotes, letters, and poems by the book's left and right margins.
 	var bookMargins = true
+	/// Small caps, capitalization, letter spacing, and text the book's styles add.
+	var bookTextEffects = true
 
 	private enum CodingKeys: String, CodingKey {
-		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents, bookMargins
+		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents, bookMargins, bookTextEffects
 	}
 
 	init() {}
@@ -50,6 +52,7 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 		bookDropCaps = try container.decodeIfPresent(Bool.self, forKey: .bookDropCaps) ?? defaults.bookDropCaps
 		bookIndents = try container.decodeIfPresent(Bool.self, forKey: .bookIndents) ?? defaults.bookIndents
 		bookMargins = try container.decodeIfPresent(Bool.self, forKey: .bookMargins) ?? defaults.bookMargins
+		bookTextEffects = try container.decodeIfPresent(Bool.self, forKey: .bookTextEffects) ?? defaults.bookTextEffects
 	}
 }
 

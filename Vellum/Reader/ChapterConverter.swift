@@ -38,6 +38,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var isOrderedList = false
 		var listCount = 0
 		var dropCapLines: Int?
+		var smallCaps: CSSStyle.SmallCaps??
 		var css = CSSStyle()
 		/// The element's text size in points, for resolving `em` lengths.
 		var fontSize = 0.0
@@ -53,6 +54,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var superscript = 0
 		var isPreformatted = false
 		var dropCapLines: Int?
+		var smallCaps: CSSStyle.SmallCaps?
 	}
 
 	private static let blockNames: Set<String> = [
@@ -308,6 +310,9 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			// With drop caps off, the letter is set like the rest of the text.
 			element.fontScale = nil
 		}
+		if typography.styles.bookTextEffects {
+			element.smallCaps = css.smallCaps
+		}
 		element.css = css
 		return element
 	}
@@ -324,6 +329,9 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			style.superscript = element.superscript ?? style.superscript
 			style.isPreformatted = style.isPreformatted || element.isPreformatted
 			style.dropCapLines = element.dropCapLines ?? style.dropCapLines
+			if let smallCaps = element.smallCaps {
+				style.smallCaps = smallCaps
+			}
 		}
 
 		style.fontScale = min(max(style.fontScale, 0.6), 2.5)
@@ -337,7 +345,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			style.fontScale = 1
 		}
 
-		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.alignment.rawValue)-\(style.superscript)"
+		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)"
 		if let attributes = attributeCache[key] {
 			return attributes
 		}
@@ -574,7 +582,37 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			}
 		}
 
-		output.append(NSAttributedString(string: text, attributes: paragraphAttributes(for: style)))
+		if let smallCaps = style.smallCaps {
+			appendSmallCaps(text, smallCaps, style: style)
+		} else {
+			output.append(NSAttributedString(string: text, attributes: paragraphAttributes(for: style)))
+		}
+	}
+
+	/// Small capitals are made by setting letters as capitals at a smaller size, which works with any font.
+	private func appendSmallCaps(_ text: String, _ smallCaps: CSSStyle.SmallCaps, style: Style) {
+		var small = style
+		small.fontScale *= 0.78
+		let normalAttributes = paragraphAttributes(for: style)
+		let smallAttributes = paragraphAttributes(for: small)
+
+		var run = ""
+		var isSmall = false
+		func flush() {
+			guard !run.isEmpty else { return }
+			output.append(NSAttributedString(string: run, attributes: isSmall ? smallAttributes : normalAttributes))
+			run = ""
+		}
+
+		for character in text {
+			let shrinks = character.isLetter && (smallCaps == .all || character.isLowercase)
+			if shrinks != isSmall {
+				flush()
+				isSmall = shrinks
+			}
+			run += shrinks ? character.uppercased() : String(character)
+		}
+		flush()
 	}
 
 	private func dropCap(_ letters: String, lines: Int, style: Style) -> NSAttributedString {

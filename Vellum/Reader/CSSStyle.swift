@@ -87,6 +87,21 @@ nonisolated struct CSSStyle: Sendable {
 		return min(max(scale, 0.6), 2.5)
 	}
 
+	enum SmallCaps: Sendable {
+		/// Lowercase letters become small capitals.
+		case lowercase
+		/// Every letter becomes a small capital.
+		case all
+	}
+
+	/// `nil` when not set; `.some(nil)` when set to normal.
+	var smallCaps: SmallCaps?? {
+		guard let value = value("font-variant-caps") ?? value("font-variant") else { return nil }
+		if value.contains("all-small-caps") { return .some(.all) }
+		if value.contains("small-caps") { return .some(.lowercase) }
+		return .some(nil)
+	}
+
 	var isHidden: Bool {
 		value("display") == "none"
 	}

@@ -116,6 +116,7 @@ struct ReaderAppearanceSheet: View {
 					Toggle("Text Sizes", isOn: $styles.bookTextSizes)
 					Toggle("Paragraph Indents", isOn: $styles.bookIndents)
 					Toggle("Margins", isOn: $styles.bookMargins)
+					Toggle("Text Effects", isOn: $styles.bookTextEffects)
 					Toggle("Drop Caps", isOn: $styles.bookDropCaps)
 				} header: {
 					Text("Book Styles")
