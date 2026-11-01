@@ -28,9 +28,11 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 	/// Follow the book's relative text sizes. Off evens out small differences in body text.
 	var bookTextSizes = true
 	var bookDropCaps = true
+	/// Indent the first lines of paragraphs as the book does.
+	var bookIndents = true
 
 	private enum CodingKeys: String, CodingKey {
-		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps
+		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents
 	}
 
 	init() {}
@@ -44,6 +46,7 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 		justification = try container.decodeIfPresent(Justification.self, forKey: .justification) ?? defaults.justification
 		bookTextSizes = try container.decodeIfPresent(Bool.self, forKey: .bookTextSizes) ?? defaults.bookTextSizes
 		bookDropCaps = try container.decodeIfPresent(Bool.self, forKey: .bookDropCaps) ?? defaults.bookDropCaps
+		bookIndents = try container.decodeIfPresent(Bool.self, forKey: .bookIndents) ?? defaults.bookIndents
 	}
 }
 

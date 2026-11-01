@@ -434,6 +434,15 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		}
 		format.alignment = alignment
 
+		// Text indent is inherited, so the innermost element that sets it wins. Hanging indents, which lists and notes
+		// use, are kept even when indents are overridden, because without them the text runs into the marker.
+		if let indent = elements.last(where: { $0.css.length("text-indent") != nil })?.css.length("text-indent") {
+			let points = indent.points(fontSize: fontSize, width: textArea.width)
+			if typography.styles.bookIndents || points < 0 {
+				format.firstLineIndent = points
+			}
+		}
+
 		self.format = format
 		lastFormat = format
 		return format
