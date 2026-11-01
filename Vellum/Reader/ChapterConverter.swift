@@ -42,6 +42,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var textTransform: CSSStyle.TextTransform?
 		var letterSpacing: Double?
 		var fontFamily: String?
+		var isUnderlined: Bool?
+		var isStruckThrough: Bool?
 		var css = CSSStyle()
 		/// The element's text size in points, for resolving `em` lengths.
 		var fontSize = 0.0
@@ -63,7 +65,12 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var letterSpacing = 0.0
 		/// A CSS `font-family` list, which may name fonts the book embeds.
 		var fontFamily: String?
+		var isUnderlined = false
+		var isStruckThrough = false
 	}
+
+	/// Marks text to strike through. Core Text has no attribute for it, so the page draws the line.
+	static let strikethroughAttribute = NSAttributedString.Key("VellumStrikethrough")
 
 	private static let blockNames: Set<String> = [
 		"p", "div", "section", "article", "header", "footer", "aside", "nav", "main", "figure", "figcaption",
@@ -278,6 +285,10 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			element.isPreformatted = true
 		case "b", "strong", "th":
 			element.isBold = true
+		case "u", "ins":
+			element.isUnderlined = true
+		case "s", "strike", "del":
+			element.isStruckThrough = true
 		case "i", "em", "cite", "var", "dfn":
 			element.isItalic = true
 		case "small":
@@ -323,6 +334,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			element.smallCaps = css.smallCaps
 			element.textTransform = css.textTransform
 			element.letterSpacing = css.letterSpacing.map { min(max($0, -0.1), 0.5) }
+			element.isUnderlined = css.isUnderlined ?? element.isUnderlined
+			element.isStruckThrough = css.isStruckThrough ?? element.isStruckThrough
 		}
 		if typography.styles.bookFonts {
 			element.fontFamily = css.properties["font-family"]
@@ -352,6 +365,9 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			style.textTransform = element.textTransform ?? style.textTransform
 			style.letterSpacing = element.letterSpacing ?? style.letterSpacing
 			style.fontFamily = element.fontFamily ?? style.fontFamily
+			// Decorations add up: CSS can't remove one an outer element draws.
+			style.isUnderlined = style.isUnderlined || element.isUnderlined == true
+			style.isStruckThrough = style.isStruckThrough || element.isStruckThrough == true
 		}
 
 		style.fontScale = min(max(style.fontScale, 0.6), 2.5)
@@ -365,7 +381,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			style.fontScale = 1
 		}
 
-		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)-\(style.fontFamily ?? "")"
+		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)-\(style.fontFamily ?? "")-\(style.isUnderlined)-\(style.isStruckThrough)"
 		if let attributes = attributeCache[key] {
 			return attributes
 		}
@@ -380,6 +396,14 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		if style.superscript != 0 {
 			attributes[NSAttributedString.Key(kCTSuperscriptAttributeName as String)] = style.superscript
+		}
+
+		if style.isUnderlined {
+			attributes[NSAttributedString.Key(kCTUnderlineStyleAttributeName as String)] = CTUnderlineStyle.single.rawValue
+		}
+
+		if style.isStruckThrough {
+			attributes[Self.strikethroughAttribute] = true
 		}
 
 		if style.letterSpacing != 0 {

@@ -128,6 +128,18 @@ nonisolated struct CSSStyle: Sendable {
 		return length.unit == .em ? length.value : length.value / 16
 	}
 
+	var isUnderlined: Bool? {
+		decoration.map { $0.contains("underline") }
+	}
+
+	var isStruckThrough: Bool? {
+		decoration.map { $0.contains("line-through") }
+	}
+
+	private var decoration: String? {
+		value("text-decoration-line") ?? value("text-decoration")
+	}
+
 	var isHidden: Bool {
 		value("display") == "none"
 	}
