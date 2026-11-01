@@ -436,12 +436,9 @@ nonisolated final class ChapterConverter {
 
 		element.isBold = css.isBold ?? element.isBold
 		element.isItalic = css.isItalic ?? element.isItalic
-		element.fontScale = css.fontScale ?? element.fontScale
-
-		// Books often nudge the size of all their body text. When that's overridden, small nudges on whole blocks are
-		// ignored, while deliberately large or small blocks, like titles and notes, keep theirs.
-		if !typography.styles.bookTextSizes, element.block == .paragraph || element.block == .quote || element.block == .listItem, let scale = css.fontScale, (0.75...1.1).contains(scale) {
-			element.fontScale = nil
+		// With book text sizes off, only the reader's own sizes for headings, small print, and the like apply.
+		if typography.styles.bookTextSizes {
+			element.fontScale = css.fontScale ?? element.fontScale
 		}
 		element.alignment = css.alignment ?? element.alignment
 
@@ -633,8 +630,7 @@ nonisolated final class ChapterConverter {
 		} else {
 			let spacing = size * typography.paragraphSpacing
 			format.spaceAfter = spacing
-			// Large gaps, like those before a new section, are kept.
-			format.spaceBefore = pendingSpaceBefore
+			format.spaceBefore = 0
 
 			switch style.block {
 			case .heading:
@@ -717,13 +713,9 @@ nonisolated final class ChapterConverter {
 		}
 		format.alignment = alignment
 
-		// Text indent is inherited, so the innermost element that sets it wins. Hanging indents, which lists and notes
-		// use, are kept even when indents are overridden, because without them the text runs into the marker.
-		if let indent = elements.last(where: { $0.css.length("text-indent") != nil })?.css.length("text-indent") {
-			let points = indent.points(fontSize: fontSize, width: textArea.width)
-			if typography.styles.bookIndents || points < 0 {
-				format.firstLineIndent = points
-			}
+		// Text indent is inherited, so the innermost element that sets it wins.
+		if typography.styles.bookIndents, let indent = elements.last(where: { $0.css.length("text-indent") != nil })?.css.length("text-indent") {
+			format.firstLineIndent = indent.points(fontSize: fontSize, width: textArea.width)
 		}
 
 		self.format = format
@@ -790,13 +782,7 @@ nonisolated final class ChapterConverter {
 		let fontSize = element.fontSize
 		let margin = (element.css.length("margin-\(side)") ?? Self.defaultMargin(for: element.name))?.points(fontSize: fontSize, width: textArea.width) ?? 0
 		let padding = element.css.length("padding-\(side)")?.points(fontSize: fontSize, width: textArea.width) ?? 0
-		let space = max(margin + padding, 0)
-
-		// With the book's spacing overridden, only gaps big enough to mark a new section are kept.
-		if !typography.styles.bookParagraphSpacing, space < typography.size * 2 {
-			return 0
-		}
-		return space
+		return typography.styles.bookParagraphSpacing ? max(margin + padding, 0) : 0
 	}
 
 	/// Browsers' default margins, for books that don't set their own.
