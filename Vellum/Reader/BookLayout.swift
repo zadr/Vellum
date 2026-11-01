@@ -107,25 +107,71 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		guard !chapterStarts.isEmpty else { return 0 }
 
 		let chapter = min(max(position.chapter, 0), chapterStarts.count - 1)
+		if let offset = position.offset {
+			return pageIndex(forChapter: chapter, offset: offset)
+		}
+
 		let count = pageCount(inChapter: chapter)
-		let offset = min(Int((position.progression * Double(count)).rounded()), count - 1)
-		return chapterStarts[chapter] + max(offset, 0)
+		let page = min(Int((position.progression * Double(count)).rounded()), count - 1)
+		return chapterStarts[chapter] + max(page, 0)
 	}
 
-	func position(forPage index: Int) -> ReadingPosition {
-		let chapter = pages[index].chapter
-		let progression = Double(index - chapterStarts[chapter]) / Double(pageCount(inChapter: chapter))
-		return ReadingPosition(chapter: chapter, progression: progression)
+	/// The page holding a character of a chapter.
+	func pageIndex(forChapter chapter: Int, offset: Int) -> Int {
+		let start = chapterStarts[chapter]
+		let pageRange = start..<(start + pageCount(inChapter: chapter))
+		return pageRange.last { pages[$0].location <= offset } ?? start
+	}
+
+	/// A position at a character of the page, defaulting to the page's first character.
+	func position(forPage index: Int, offset: Int? = nil) -> ReadingPosition {
+		let page = pages[index]
+		let progression = Double(index - chapterStarts[page.chapter]) / Double(pageCount(inChapter: page.chapter))
+		return ReadingPosition(
+			chapter: page.chapter,
+			progression: progression,
+			fractionRead: Double(index + 1) / Double(pages.count),
+			lastRead: .now,
+			offset: offset ?? page.location
+		)
+	}
+
+	/// The first character on the line at a distance from the top of a page.
+	func characterOffset(inPage index: Int, atY y: Double) -> Int {
+		let page = pages[index]
+		let line = lineGeometry(inPage: index).first { $0.bottom > y }
+		return line?.location ?? page.location + page.length
+	}
+
+	/// How far from the top of a page the line holding a character starts.
+	func y(ofCharacter offset: Int, inPage index: Int) -> Double {
+		let line = lineGeometry(inPage: index).last { $0.location <= offset }
+		return max(line?.top ?? 0, 0)
+	}
+
+	/// Where each line of a page sits, measured down from the top of the page as it's drawn.
+	private func lineGeometry(inPage index: Int) -> [(location: Int, top: Double, bottom: Double)] {
+		let page = pages[index]
+		let frame = CTFramesetterCreateFrame(chapters[page.chapter].framesetter, CFRange(location: page.location, length: page.length), CGPath(rect: textRect, transform: nil), nil)
+		let lines = CTFrameGetLines(frame) as? [CTLine] ?? []
+		var origins = [CGPoint](repeating: .zero, count: lines.count)
+		CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+
+		// Matches the flip in `draw`: scroll pieces are aligned to the top of their frame.
+		let top = mode == .scroll ? textRect.maxY : page.height
+
+		return zip(lines, origins).map { line, origin in
+			var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+			CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+			let baseline = top - (textRect.minY + origin.y)
+			return (CTLineGetStringRange(line).location, baseline - ascent, baseline + descent)
+		}
 	}
 
 	func pageIndex(for entry: ReaderContentsEntry) -> Int {
 		guard chapters.indices.contains(entry.chapter) else { return 0 }
-
-		let start = chapterStarts[entry.chapter]
-		guard let fragment = entry.fragment, let offset = chapters[entry.chapter].anchors[fragment] else { return start }
-
-		let pageRange = start..<(start + pageCount(inChapter: entry.chapter))
-		return pageRange.last { pages[$0].location <= offset } ?? start
+		guard let fragment = entry.fragment, let offset = chapters[entry.chapter].anchors[fragment] else { return chapterStarts[entry.chapter] }
+		return pageIndex(forChapter: entry.chapter, offset: offset)
 	}
 
 	/// The words on a page, for VoiceOver.

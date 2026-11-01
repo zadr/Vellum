@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Theme, layout, and typography for the reader. Stays open at half height so changes show on the page behind it.
+/// Theme, layout, and typography for the reader. Stays at half height so changes show on the page behind it.
 struct ReaderAppearanceSheet: View {
 	@Environment(\.dismiss) private var dismiss
 
@@ -104,8 +104,9 @@ struct ReaderAppearanceSheet: View {
 				}
 			}
 		}
-		.presentationDetents([.medium, .large])
-		.presentationBackgroundInteraction(.enabled(upThrough: .medium))
+		// Never taller than half the screen, so the page behind it always shows the result.
+		.presentationDetents([.medium])
+		.presentationBackgroundInteraction(.enabled)
 	}
 
 	private static func percent(_ value: Double) -> String {

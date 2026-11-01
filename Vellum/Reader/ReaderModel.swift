@@ -13,10 +13,17 @@ final class ReaderModel {
 
 	/// The page scrolled into view. Optional because that's what scroll positions bind to.
 	var visiblePage: Int? {
-		didSet { recordPosition() }
+		didSet { pageChanged() }
 	}
 
+	/// Where the reader is. Only changes when they move, so laying the book out again never loses their place.
 	@ObservationIgnored private var position: ReadingPosition
+	/// Set while the model itself moves to the saved position, so that isn't mistaken for the reader moving.
+	@ObservationIgnored private var isRestoring = false
+	/// Where each scroll piece on screen starts, relative to the top of the scroll view.
+	@ObservationIgnored private var pieceTops: [Int: Double] = [:]
+	/// Where a piece scrolled to the top of the screen sits, in the same terms as `pieceTops`.
+	@ObservationIgnored var scrollTopEdge = 0.0
 	@ObservationIgnored private var layoutGeneration = 0
 	@ObservationIgnored private let onPositionChange: (ReadingPosition) -> Void
 
@@ -75,6 +82,47 @@ final class ReaderModel {
 		visiblePage = layout.pageIndex(for: entry)
 	}
 
+	// MARK: Scrolling
+
+	/// The piece to scroll to when a scrolling layout appears, and how far down it the saved line is.
+	var scrollRestoreTarget: (piece: Int, y: Double) {
+		guard let layout else { return (0, 0) }
+
+		let piece = layout.pageIndex(for: position)
+		let y = position.offset.map { layout.y(ofCharacter: $0, inPage: piece) } ?? 0
+		return (piece, y)
+	}
+
+	func scrollPiece(_ index: Int, movedTo top: Double) {
+		pieceTops[index] = top
+	}
+
+	func scrollPieceDisappeared(_ index: Int) {
+		pieceTops[index] = nil
+	}
+
+	func pieceTop(_ index: Int) -> Double? {
+		pieceTops[index]
+	}
+
+	/// Records the line at the top of the screen once scrolling comes to rest.
+	func scrollingStopped() {
+		guard let layout, layout.mode == .scroll else { return }
+
+		// The piece crossing the top edge of the screen.
+		let edge = scrollTopEdge + 0.5
+		let crossing = pieceTops
+			.filter { index, top in layout.pages.indices.contains(index) && top <= edge && top + layout.pages[index].height > edge }
+			.max { $0.value < $1.value }
+		guard let (piece, top) = crossing else { return }
+
+		let offset = layout.characterOffset(inPage: piece, atY: scrollTopEdge - top)
+		restoring {
+			visiblePage = piece
+		}
+		save(layout.position(forPage: piece, offset: offset))
+	}
+
 	// MARK: Layout
 
 	/// Breaks the book into pages for a page size, typography, and mode, keeping the reader's place.
@@ -87,8 +135,11 @@ final class ReaderModel {
 
 		do {
 			let newLayout = try await BookLayout.make(book: book, pageSize: pageSize, typography: typography, mode: mode)
+			pieceTops = [:]
 			layout = newLayout
-			visiblePage = newLayout.pageIndex(for: position)
+			restoring {
+				visiblePage = newLayout.pageIndex(for: position)
+			}
 			layoutError = nil
 		} catch is CancellationError {
 			// A newer layout replaced this one.
@@ -101,12 +152,25 @@ final class ReaderModel {
 		}
 	}
 
-	private func recordPosition() {
-		guard let layout, let visiblePage, layout.pages.indices.contains(visiblePage) else { return }
+	private func restoring(_ change: () -> Void) {
+		isRestoring = true
+		change()
+		isRestoring = false
+	}
 
-		position = layout.position(forPage: visiblePage)
-		position.fractionRead = Double(visiblePage + 1) / Double(layout.pages.count)
-		position.lastRead = .now
-		onPositionChange(position)
+	/// The reader turned a page, or jumped somewhere. Scrolling is recorded separately, once it stops.
+	private func pageChanged() {
+		guard !isRestoring, let layout, layout.mode == .pages, let visiblePage, layout.pages.indices.contains(visiblePage) else { return }
+
+		// Staying on the saved page, as a scroll view settling might report, keeps the exact saved spot.
+		if layout.pageIndex(for: position) == visiblePage {
+			return
+		}
+		save(layout.position(forPage: visiblePage))
+	}
+
+	private func save(_ newPosition: ReadingPosition) {
+		position = newPosition
+		onPositionChange(newPosition)
 	}
 }
