@@ -18,7 +18,8 @@ struct ReaderPages: View {
 						textColor: textColor,
 						previous: showPreviousPage,
 						toggleChrome: model.toggleChrome,
-						next: showNextPage
+						next: showNextPage,
+						follow: model.follow
 					)
 					.containerRelativeFrame([.horizontal, .vertical])
 				}

@@ -194,6 +194,35 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		return placed.last { $0.0.location <= offset }?.1 ?? 0
 	}
 
+	/// The page an element in a chapter is on, or the chapter's first page if it can't be found.
+	func pageIndex(forChapter chapter: Int, fragment: String?) -> Int {
+		guard chapters.indices.contains(chapter) else { return 0 }
+		guard let fragment, let offset = chapters[chapter].anchors[fragment] else { return chapterStarts[chapter] }
+		return pageIndex(forChapter: chapter, offset: offset)
+	}
+
+	/// The link under a point on a page, measured from the page's top left.
+	func link(at point: CGPoint, inPage index: Int) -> URL? {
+		let page = pages[index]
+		let chapter = chapters[page.chapter]
+
+		for (line, boxTop) in zip(chapter.lines[page.firstLine...], page.lineTops) {
+			let top = boxTop + line.spaceAboveText
+			guard point.y >= top, point.y < top + line.height else { continue }
+
+			let x = point.x - textRect.minX - line.x
+			let lineRange = CTLineGetStringRange(line.line)
+			let index = CTLineGetStringIndexForPosition(line.line, CGPoint(x: x, y: 0))
+			guard index != kCFNotFound, x >= 0, x <= CTLineGetTypographicBounds(line.line, nil, nil, nil) else { return nil }
+
+			// Line ranges count from the line's own text; the chapter text starts at the line's location.
+			let location = line.location + max(index - lineRange.location, 0)
+			guard location < chapter.text.length else { return nil }
+			return chapter.text.attribute(ChapterConverter.linkAttribute, at: location, effectiveRange: nil) as? URL
+		}
+		return nil
+	}
+
 	func pageIndex(for entry: ReaderContentsEntry) -> Int {
 		guard chapters.indices.contains(entry.chapter) else { return 0 }
 		guard let fragment = entry.fragment, let offset = chapters[entry.chapter].anchors[fragment] else { return chapterStarts[entry.chapter] }

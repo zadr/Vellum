@@ -3,6 +3,7 @@ import SwiftUI
 /// The pages of an open book, with the controls that appear over them.
 struct ReaderContent: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@Environment(\.openURL) private var openURL
 
 	@AppStorage("reader-mode") private var mode = ReaderMode.pages
 	@AppStorage("reader-font") private var font = ReaderFont.charter
@@ -63,6 +64,16 @@ struct ReaderContent: View {
 					.transition(chromeTransition(from: .bottom))
 			}
 		}
+		.overlay(alignment: .bottomLeading) {
+			if !model.backStack.isEmpty && !model.isChromeVisible {
+				ReaderBackButton(goBack: goBack)
+					.transition(.opacity)
+			}
+		}
+		.animation(.snappy, value: model.backStack.isEmpty)
+		.onChange(of: model.externalLink) {
+			openExternalLink()
+		}
 		.animation(.snappy, value: model.isChromeVisible)
 		.sheet(isPresented: $isShowingContents) {
 			ContentsView(book: model.book, currentChapter: model.chapter, select: model.go)
@@ -85,6 +96,18 @@ struct ReaderContent: View {
 
 	private func chromeTransition(from edge: Edge) -> AnyTransition {
 		reduceMotion ? .opacity : .move(edge: edge).combined(with: .opacity)
+	}
+
+	private func goBack() {
+		withAnimation(reduceMotion ? nil : .smooth) {
+			model.goBack()
+		}
+	}
+
+	private func openExternalLink() {
+		guard let link = model.externalLink else { return }
+		model.externalLink = nil
+		openURL(link)
 	}
 
 	private func showContents() {

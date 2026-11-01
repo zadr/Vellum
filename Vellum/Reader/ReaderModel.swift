@@ -10,6 +10,13 @@ final class ReaderModel {
 	private(set) var isLayingOut = false
 	private(set) var layoutError: String?
 	var isChromeVisible = false
+	/// A web or mail link the reader tapped, for the view to open.
+	var externalLink: URL?
+	/// A page the reader asked to go to, such as from a link or the contents. Scroll mode moves there when it changes;
+	/// page mode follows `visiblePage` directly. The number makes repeated jumps to the same page distinct.
+	private(set) var jump: (page: Int, number: Int)?
+	/// Where the reader was before following links in the book, most recent last, so they can go back.
+	private(set) var backStack: [Int] = []
 
 	/// The page scrolled into view. Optional because that's what scroll positions bind to.
 	var visiblePage: Int? {
@@ -77,9 +84,31 @@ final class ReaderModel {
 		isChromeVisible.toggle()
 	}
 
+	/// Follows a link: within the book it jumps there, remembering where the reader was; otherwise the view opens it.
+	func follow(_ link: URL) {
+		guard let layout else { return }
+
+		if let destination = book.destination(of: link) {
+			backStack.append(currentPage)
+			jump(to: layout.pageIndex(forChapter: destination.chapter, fragment: destination.fragment))
+		} else if !link.isFileURL {
+			externalLink = link
+		}
+	}
+
+	func goBack() {
+		guard let page = backStack.popLast() else { return }
+		jump(to: page)
+	}
+
+	private func jump(to page: Int) {
+		visiblePage = page
+		jump = (page, (jump?.number ?? 0) + 1)
+	}
+
 	func go(to entry: ReaderContentsEntry) {
 		guard let layout else { return }
-		visiblePage = layout.pageIndex(for: entry)
+		jump(to: layout.pageIndex(for: entry))
 	}
 
 	// MARK: Scrolling
@@ -155,6 +184,8 @@ final class ReaderModel {
 
 	private func show(_ newLayout: BookLayout) {
 		pieceTops = [:]
+		// Page numbers mean something different in a new layout.
+		backStack = []
 		layout = newLayout
 		restoring {
 			visiblePage = newLayout.pageIndex(for: position)

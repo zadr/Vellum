@@ -16,6 +16,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	static let dropCapAttribute = NSAttributedString.Key("VellumDropCap")
 	/// The `ParagraphFormat` for the paragraph the text belongs to.
 	static let formatAttribute = NSAttributedString.Key("VellumParagraphFormat")
+	/// Where a link goes: a file in the book, with any fragment, or a web address.
+	static let linkAttribute = NSAttributedString.Key("VellumLink")
 
 	private enum Block: Hashable {
 		case paragraph
@@ -51,6 +53,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var paragraphCount = 0
 		/// The style of content the book adds after the element, generated when it closes.
 		var after: CSSStyle?
+		var link: URL?
 	}
 
 	/// The style that applies to text at the current point, after inheriting from every open element.
@@ -71,6 +74,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var fontFamily: String?
 		var isUnderlined = false
 		var isStruckThrough = false
+		var link: URL?
 	}
 
 	/// Marks text to strike through. Core Text has no attribute for it, so the page draws the line.
@@ -121,6 +125,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	private static let tab = "\t"
 	/// How many generated quotes are open, so nested quotes alternate marks.
 	private var quoteDepth = 0
+	/// The target of an `<a>` being opened, picked up by its element.
+	private var pendingLink: URL?
 
 	private init(file: URL, typography: ReaderTypography, textArea: CGSize, styleSheets: StyleSheetCache) {
 		self.file = file
@@ -198,6 +204,10 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			return
 		default:
 			break
+		}
+
+		if name == "a", let href = attributes["href"] ?? attributes["xlink:href"] {
+			pendingLink = linkTarget(href)
 		}
 
 		let classes = attributes["class"]?.lowercased().split(separator: " ").map(String.init) ?? []
@@ -454,6 +464,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		if typography.styles.bookFonts {
 			element.fontFamily = css.properties["font-family"]
 		}
+		element.link = pendingLink
+		pendingLink = nil
 		if name == "pre" || name == "code" || name == "kbd" || name == "samp" || name == "tt" {
 			element.fontFamily = element.fontFamily ?? "monospace"
 		}
@@ -482,6 +494,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			// Decorations add up: CSS can't remove one an outer element draws.
 			style.isUnderlined = style.isUnderlined || element.isUnderlined == true
 			style.isStruckThrough = style.isStruckThrough || element.isStruckThrough == true
+			style.link = element.link ?? style.link
 		}
 
 		style.fontScale = min(max(style.fontScale, 0.6), 2.5)
@@ -495,7 +508,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			style.fontScale = 1
 		}
 
-		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)-\(style.fontFamily ?? "")-\(style.isUnderlined)-\(style.isStruckThrough)"
+		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)-\(style.fontFamily ?? "")-\(style.isUnderlined)-\(style.isStruckThrough)-\(style.link?.absoluteString ?? "")"
 		if let attributes = attributeCache[key] {
 			return attributes
 		}
@@ -518,6 +531,10 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		if style.isStruckThrough {
 			attributes[Self.strikethroughAttribute] = true
+		}
+
+		if let link = style.link {
+			attributes[Self.linkAttribute] = link
 		}
 
 		if style.letterSpacing != 0 {
@@ -1000,6 +1017,16 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		while let last = lastCharacter, [Self.space, Self.newline, Self.lineSeparatorCharacter, 9].contains(last) {
 			output.deleteCharacters(in: NSRange(location: output.length - 1, length: 1))
 		}
+	}
+
+	/// Where a link goes, keeping its fragment: a file in the book, or a web or mail address.
+	private func linkTarget(_ href: String) -> URL? {
+		let href = href.trimmingCharacters(in: .whitespaces)
+		if let url = URL(string: href), let scheme = url.scheme?.lowercased(), ["http", "https", "mailto"].contains(scheme) {
+			return url
+		}
+		guard let url = URL(string: href, relativeTo: file), url.isFileURL else { return nil }
+		return url.absoluteURL
 	}
 
 	/// Resolves a link from the chapter, which may be percent-encoded and carry a `#fragment`.

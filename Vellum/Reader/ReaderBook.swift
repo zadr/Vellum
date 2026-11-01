@@ -69,6 +69,19 @@ nonisolated struct ReaderBook: Sendable {
 		root.appending(path: chapters[chapter])
 	}
 
+	/// The chapter and fragment a link inside the book goes to.
+	func destination(of link: URL) -> (chapter: Int, fragment: String?)? {
+		guard link.isFileURL else { return nil }
+
+		let path = URL(filePath: link.path(percentEncoded: false)).standardizedFileURL.path(percentEncoded: false)
+		let rootPath = root.path(percentEncoded: false)
+		guard path.hasPrefix(rootPath) else { return nil }
+
+		let relative = String(path.dropFirst(rootPath.count).drop { $0 == "/" })
+		guard let chapter = chapters.firstIndex(of: relative) else { return nil }
+		return (chapter, link.fragment(percentEncoded: false))
+	}
+
 	/// The contents entry for the part of the book that chapter belongs to.
 	func contentsEntry(forChapter chapter: Int) -> ReaderContentsEntry? {
 		contents.last { $0.chapter <= chapter }
