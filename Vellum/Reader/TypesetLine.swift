@@ -37,8 +37,8 @@ nonisolated struct TypesetLine: @unchecked Sendable {
 
 	/// Start a new page with this line.
 	var breaksPageBefore = false
-	/// Keep the paragraph's first lines and last lines together, as widows and orphans and headings need.
-	var keepWithPrevious = false
+	/// Keep the line on the same page as the first lines of the next paragraph, as a heading's last line does.
+	var keepWithFollowing = false
 
 	/// The gap between a rule and the text it's next to.
 	static let ruleGap = 6.0
@@ -67,7 +67,7 @@ nonisolated extension TypesetLine {
 		line.paragraphWidth = paragraphWidth
 		line.cells = cells
 		line.breaksPageBefore = breaksPageBefore
-		line.keepWithPrevious = keepWithPrevious
+		line.keepWithFollowing = keepWithFollowing
 		return line
 	}
 }

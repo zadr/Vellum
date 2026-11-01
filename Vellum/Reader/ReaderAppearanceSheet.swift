@@ -120,7 +120,7 @@ struct ReaderAppearanceSheet: View {
 					Toggle("Fonts", isOn: $styles.bookFonts)
 					Toggle("Borders and Rules", isOn: $styles.bookBorders)
 					Toggle("Tables", isOn: $styles.bookTables)
-					Toggle("Page Breaks", isOn: $styles.bookPageBreaks)
+					Toggle("Page Breaks and Keeps", isOn: $styles.bookPageBreaks)
 					Toggle("Drop Caps", isOn: $styles.bookDropCaps)
 				} header: {
 					Text("Book Styles")

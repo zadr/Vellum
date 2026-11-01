@@ -210,6 +210,19 @@ nonisolated struct CSSStyle: Sendable {
 		["always", "page", "left", "right"].contains(value("page-break-after") ?? value("break-after") ?? "")
 	}
 
+	var widows: Int? {
+		value("widows").flatMap(Int.init)
+	}
+
+	var orphans: Int? {
+		value("orphans").flatMap(Int.init)
+	}
+
+	/// Whether the element should stay on the same page as whatever follows it, as headings do.
+	var avoidsBreakAfter: Bool {
+		(value("page-break-after") ?? value("break-after")) == "avoid"
+	}
+
 	var isHidden: Bool {
 		value("display") == "none"
 	}

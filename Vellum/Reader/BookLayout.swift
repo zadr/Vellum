@@ -100,8 +100,16 @@ nonisolated final class BookLayout: @unchecked Sendable {
 
 		for (index, line) in lines.enumerated() {
 			var gap = index == first && mode == .pages ? 0 : line.spaceBefore
-			// Lines a drop cap spans have to fit on the same page as it.
-			let needed = lines[index...].prefix(line.keepWithNext + 1).reduce(0) { $0 + $1.totalHeight }
+			// Lines kept together, like those a drop cap spans or the ends of a paragraph, have to fit on one page.
+			// A heading also takes the start of what follows. Groups taller than a page break normally.
+			var keptCount = line.keepWithNext + 1
+			var next = index + keptCount - 1
+			while next + 1 < lines.count, lines[next].keepWithFollowing, mode == .pages {
+				keptCount = next + 1 - index + lines[next + 1].keepWithNext + 1
+				next = index + keptCount - 1
+			}
+			let kept = lines[index...].prefix(keptCount).reduce(0) { $0 + $1.totalHeight }
+			let needed = kept > textRect.height ? line.totalHeight : kept
 
 			if index > first, (mode == .pages && line.breaksPageBefore) || y + gap + needed > textRect.height {
 				finishPage(at: index)

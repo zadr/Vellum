@@ -617,6 +617,16 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		format.breaksPageBefore = pendingPageBreak
 		pendingPageBreak = false
 
+		if styles.bookPageBreaks {
+			// Inherited, so the innermost element that sets each wins.
+			format.widows = elements.last { $0.css.widows != nil }?.css.widows ?? 2
+			format.orphans = elements.last { $0.css.orphans != nil }?.css.orphans ?? 2
+			format.keepWithNext = isHeading(style.block) || elements.contains { $0.block != nil && $0.css.avoidsBreakAfter }
+		} else {
+			format.widows = 1
+			format.orphans = 1
+		}
+
 		switch style.block {
 		case .heading:
 			format.lineHeight = max(format.lineHeight * 0.9, 1)

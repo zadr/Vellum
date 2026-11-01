@@ -117,6 +117,23 @@ nonisolated struct ParagraphTypesetter {
 		if style.breaksPageBefore, !lines.isEmpty {
 			lines[0].breaksPageBefore = true
 		}
+
+		// Widows and orphans: a page may only break inside the paragraph where it leaves enough lines on each side.
+		// The paragraph's first lines are kept together, as are its last lines; short paragraphs stay whole.
+		if !lines.isEmpty {
+			let orphans = max(style.orphans, 1), widows = max(style.widows, 1)
+			if lines.count < orphans + widows {
+				lines[0].keepWithNext = max(lines[0].keepWithNext, lines.count - 1)
+			} else {
+				lines[0].keepWithNext = max(lines[0].keepWithNext, orphans - 1)
+				let lastStart = lines.count - widows
+				lines[lastStart].keepWithNext = max(lines[lastStart].keepWithNext, widows - 1)
+			}
+			// A heading takes the start of whatever follows it onto its page.
+			if style.keepWithNext {
+				lines[lines.count - 1].keepWithFollowing = true
+			}
+		}
 		if style.borderBottom > 0, !lines.isEmpty {
 			lines[lines.count - 1].borderBottom = style.borderBottom
 		}
