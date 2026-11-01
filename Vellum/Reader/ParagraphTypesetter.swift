@@ -4,15 +4,6 @@ import Foundation
 /// Sets a chapter's text into lines: chooses breaks with `LineBreaker`, hyphenating where it helps,
 /// then builds each line with Core Text. Justified lines are filled out by widening the spaces between words only.
 nonisolated struct ParagraphTypesetter {
-	private struct Paragraph {
-		var alignment = CTTextAlignment.natural
-		var firstLineIndent = 0.0
-		var indent = 0.0
-		var spaceBefore = 0.0
-		var spaceAfter = 0.0
-		var lineHeight = 1.0
-	}
-
 	/// Where a line ends, as found by the line breaker.
 	private struct Break {
 		/// Where the line's text ends, before any spaces.
@@ -48,10 +39,11 @@ nonisolated struct ParagraphTypesetter {
 			let end = newline.location == NSNotFound ? string.length : newline.location
 
 			if end > start {
-				let paragraph = Self.paragraph(at: start, in: text)
+				let format = text.attribute(ChapterConverter.formatAttribute, at: start, effectiveRange: nil) as? ParagraphFormat ?? ParagraphFormat()
 				let range = NSRange(location: start, length: end - start)
-				lines += setParagraph(text.attributedSubstring(from: range), style: paragraph, offset: start, spaceBefore: previousSpaceAfter + paragraph.spaceBefore)
-				previousSpaceAfter = paragraph.spaceAfter
+				// Like CSS margins, the space between paragraphs is the larger of the two, not their sum.
+				lines += setParagraph(text.attributedSubstring(from: range), style: format, offset: start, spaceBefore: max(previousSpaceAfter, format.spaceBefore))
+				previousSpaceAfter = format.spaceAfter
 			}
 
 			start = end + 1
@@ -62,7 +54,7 @@ nonisolated struct ParagraphTypesetter {
 
 	// MARK: Paragraphs
 
-	private func setParagraph(_ paragraph: NSAttributedString, style: Paragraph, offset paragraphOffset: Int, spaceBefore: Double) -> [TypesetLine] {
+	private func setParagraph(_ paragraph: NSAttributedString, style: ParagraphFormat, offset paragraphOffset: Int, spaceBefore: Double) -> [TypesetLine] {
 		// A drop cap is taken out of the text and drawn beside the first lines, which are shortened to make room.
 		let dropCap = Self.dropCap(in: paragraph, lineHeight: style.lineHeight)
 		let capLength = dropCap?.length ?? 0
@@ -77,7 +69,7 @@ nonisolated struct ParagraphTypesetter {
 			if let dropCap, line < dropCap.lines {
 				return dropCap.width
 			}
-			return line == 0 ? style.firstLineIndent : style.indent
+			return line == 0 ? style.firstLineInset : style.indent
 		}
 
 		func lineWidth(_ line: Int) -> Double {
@@ -148,26 +140,6 @@ nonisolated struct ParagraphTypesetter {
 		let line = CTLineCreateWithAttributedString(letters)
 		let width = CTLineGetTypographicBounds(line, nil, nil, nil) + bodySize * 0.3
 		return (line, range.length, lines, width.rounded(.up))
-	}
-
-	private static func paragraph(at index: Int, in text: NSAttributedString) -> Paragraph {
-		var paragraph = Paragraph()
-		guard let attribute = text.attribute(NSAttributedString.Key(kCTParagraphStyleAttributeName as String), at: index, effectiveRange: nil) else { return paragraph }
-
-		let style = attribute as! CTParagraphStyle
-		func value(_ specifier: CTParagraphStyleSpecifier) -> Double {
-			var value: CGFloat = 0
-			CTParagraphStyleGetValueForSpecifier(style, specifier, MemoryLayout<CGFloat>.size, &value)
-			return value
-		}
-
-		CTParagraphStyleGetValueForSpecifier(style, .alignment, MemoryLayout<CTTextAlignment>.size, &paragraph.alignment)
-		paragraph.firstLineIndent = value(.firstLineHeadIndent)
-		paragraph.indent = value(.headIndent)
-		paragraph.spaceBefore = value(.paragraphSpacingBefore)
-		paragraph.spaceAfter = value(.paragraphSpacing)
-		paragraph.lineHeight = max(value(.lineHeightMultiple), 1)
-		return paragraph
 	}
 
 	// MARK: Breaking
@@ -305,7 +277,7 @@ nonisolated struct ParagraphTypesetter {
 
 	// MARK: Building lines
 
-	private func makeLine(_ text: NSAttributedString, string: NSString, start: Int, lineBreak: Break, index: Int, style: Paragraph, offset: Int, inset: Double, lineWidth: Double, spaceBefore: Double) -> TypesetLine {
+	private func makeLine(_ text: NSAttributedString, string: NSString, start: Int, lineBreak: Break, index: Int, style: ParagraphFormat, offset: Int, inset: Double, lineWidth: Double, spaceBefore: Double) -> TypesetLine {
 		var end = lineBreak.end
 		while end > start, [Self.space, Self.lineSeparator].contains(string.character(at: end - 1)) {
 			end -= 1

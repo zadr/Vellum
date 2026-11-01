@@ -1,15 +1,11 @@
 import CoreText
 import Foundation
 
-/// The handful of CSS properties the reader honors. Anything else in a book's styles is ignored.
+/// The CSS declarations that apply to an element, with accessors for the properties the reader honors.
+/// Anything else in a book's styles is kept but ignored.
 nonisolated struct CSSStyle: Sendable {
-	var alignment: CTTextAlignment?
-	var isItalic: Bool?
-	var isBold: Bool?
-	/// Relative to the parent element's text size.
-	var fontScale: Double?
-	var isHidden = false
-	var floatsLeft: Bool?
+	/// Declared values by property name, with shorthands like `margin` expanded into their parts.
+	private(set) var properties: [String: String] = [:]
 
 	init() {}
 
@@ -20,40 +16,83 @@ nonisolated struct CSSStyle: Sendable {
 			guard parts.count == 2 else { continue }
 
 			let property = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-			let value = parts[1].replacing("!important", with: "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-			switch property {
-			case "text-align":
-				alignment = switch value {
-				case "center": .center
-				case "right", "end": .right
-				case "left", "start", "justify": .natural
-				default: alignment
-				}
-			case "font-style":
-				isItalic = value == "italic" || value == "oblique"
-			case "font-weight":
-				isBold = value == "bold" || value == "bolder" || (Int(value) ?? 400) >= 600
-			case "font-size":
-				fontScale = Self.fontScale(from: value) ?? fontScale
-			case "float":
-				floatsLeft = value == "left"
-			case "display":
-				isHidden = value == "none"
-			default:
-				break
-			}
+			let value = parts[1].replacing("!important", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+			set(property, to: value)
 		}
 	}
 
 	/// Later styles win, as they would in a browser.
 	mutating func merge(_ other: CSSStyle) {
-		alignment = other.alignment ?? alignment
-		isItalic = other.isItalic ?? isItalic
-		isBold = other.isBold ?? isBold
-		fontScale = other.fontScale ?? fontScale
-		floatsLeft = other.floatsLeft ?? floatsLeft
-		isHidden = isHidden || other.isHidden
+		properties.merge(other.properties) { _, new in new }
+	}
+
+	private mutating func set(_ property: String, to value: String) {
+		switch property {
+		case "margin", "padding":
+			// One to four values: top, right, bottom, left, with missing ones mirrored.
+			let values = value.split(separator: " ").map(String.init)
+			guard !values.isEmpty, values.count <= 4 else { return }
+			let top = values[0], right = values.count > 1 ? values[1] : top
+			let bottom = values.count > 2 ? values[2] : top, left = values.count > 3 ? values[3] : right
+			for (side, value) in [("top", top), ("right", right), ("bottom", bottom), ("left", left)] {
+				properties["\(property)-\(side)"] = value
+			}
+		default:
+			properties[property] = value
+		}
+	}
+
+	private func value(_ property: String) -> String? {
+		properties[property]?.lowercased()
+	}
+
+	/// A length-valued property, if it's set to a length.
+	func length(_ property: String) -> CSSLength? {
+		value(property).flatMap(CSSLength.init)
+	}
+
+	// MARK: Text
+
+	var alignment: CTTextAlignment? {
+		switch value("text-align") {
+		case "center": .center
+		case "right", "end": .right
+		case "justify": .justified
+		case "left", "start": .natural
+		default: nil
+		}
+	}
+
+	var isItalic: Bool? {
+		value("font-style").map { $0 == "italic" || $0 == "oblique" }
+	}
+
+	var isBold: Bool? {
+		value("font-weight").map { $0 == "bold" || $0 == "bolder" || (Int($0) ?? 400) >= 600 }
+	}
+
+	/// Relative to the parent element's text size.
+	var fontScale: Double? {
+		guard let value = value("font-size") else { return nil }
+
+		let keywords = ["xx-small": 0.6, "x-small": 0.75, "small": 0.89, "smaller": 0.85, "medium": 1, "large": 1.2, "larger": 1.2, "x-large": 1.5, "xx-large": 2]
+		if let scale = keywords[value] {
+			return scale
+		}
+
+		guard let length = CSSLength(value) else { return nil }
+		// Pixel and point sizes are taken relative to the 16-pixel default. Odd sizes are kept from making text
+		// unreadable or a single word fill the page.
+		let scale = length.points(fontSize: 1, width: 1) / (length.unit == .points ? 16 : 1)
+		return min(max(scale, 0.6), 2.5)
+	}
+
+	var isHidden: Bool {
+		value("display") == "none"
+	}
+
+	var floatsLeft: Bool? {
+		value("float").map { $0 == "left" }
 	}
 
 	/// How many lines a drop cap with this style spans, if the style makes one: a large letter floated to the left.
@@ -61,21 +100,5 @@ nonisolated struct CSSStyle: Sendable {
 		guard floatsLeft == true, let fontScale, fontScale >= 1.8 else { return nil }
 		// Designers size drop caps by the lines they span; about 1.5× the text size per line covers how books do it.
 		return min(max(Int((fontScale / 1.5).rounded()), 2), 4)
-	}
-
-	private static func fontScale(from value: String) -> Double? {
-		let keywords = ["xx-small": 0.6, "x-small": 0.75, "small": 0.89, "smaller": 0.85, "medium": 1, "large": 1.2, "larger": 1.2, "x-large": 1.5, "xx-large": 2]
-		if let scale = keywords[value] {
-			return scale
-		}
-
-		let units = [("em", 1.0), ("rem", 1.0), ("%", 0.01), ("px", 1 / 16.0), ("pt", 1 / 12.0)]
-		for (unit, factor) in units where value.hasSuffix(unit) {
-			guard let number = Double(value.dropLast(unit.count)) else { return nil }
-			// Keep odd sizes from making text unreadable or a single word fill the page.
-			return min(max(number * factor, 0.6), 2.5)
-		}
-
-		return nil
 	}
 }

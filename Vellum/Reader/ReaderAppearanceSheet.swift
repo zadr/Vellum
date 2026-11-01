@@ -11,7 +11,7 @@ struct ReaderAppearanceSheet: View {
 	@AppStorage("reader-line-height") private var lineHeight = ReaderTypography.defaultLineHeight
 	@AppStorage("reader-paragraph-spacing") private var paragraphSpacing = ReaderTypography.defaultParagraphSpacing
 	@AppStorage("reader-column-width") private var columnWidth = ReaderTypography.defaultColumnWidth
-	@AppStorage("reader-justified") private var isJustified = true
+	@AppStorage("reader-styles") private var styles = ReaderStyleSettings()
 
 	/// The widest column the current screen can hold.
 	let maximumColumnWidth: Double
@@ -60,30 +60,47 @@ struct ReaderAppearanceSheet: View {
 						valueText: Self.percent
 					)
 
-					ReaderSettingSlider(
-						title: "Line Height",
-						value: $lineHeight,
-						range: ReaderTypography.lineHeights,
-						step: 0.05,
-						smallerImage: "arrow.down.and.line.horizontal.and.arrow.up",
-						largerImage: "arrow.up.and.line.horizontal.and.arrow.down",
-						valueText: Self.multiple
-					)
+					Picker("Justification", selection: $styles.justification) {
+						ForEach(ReaderStyleSettings.Justification.allCases) { option in
+							Text(option.label)
+								.tag(option)
+						}
+					}
+				}
 
-					ReaderSettingSlider(
-						title: "Paragraph Spacing",
-						value: $paragraphSpacing,
-						range: ReaderTypography.paragraphSpacings,
-						step: 0.1,
-						smallerImage: "text.alignleft",
-						largerImage: "text.justify.leading",
-						valueText: Self.multiple
-					)
+				Section {
+					Toggle("Book Line Height", isOn: $styles.bookLineHeight)
+
+					if !styles.bookLineHeight {
+						ReaderSettingSlider(
+							title: "Line Height",
+							value: $lineHeight,
+							range: ReaderTypography.lineHeights,
+							step: 0.05,
+							smallerImage: "arrow.down.and.line.horizontal.and.arrow.up",
+							largerImage: "arrow.up.and.line.horizontal.and.arrow.down",
+							valueText: Self.multiple
+						)
+					}
+
+					Toggle("Book Paragraph Spacing", isOn: $styles.bookParagraphSpacing)
+
+					if !styles.bookParagraphSpacing {
+						ReaderSettingSlider(
+							title: "Paragraph Spacing",
+							value: $paragraphSpacing,
+							range: ReaderTypography.paragraphSpacings,
+							step: 0.1,
+							smallerImage: "text.alignleft",
+							largerImage: "text.justify.leading",
+							valueText: Self.multiple
+						)
+					}
+				} header: {
+					Text("Spacing")
 				}
 
 				Section("Page") {
-					Toggle("Justify Text", isOn: $isJustified)
-
 					ReaderSettingSlider(
 						title: "Column Width",
 						value: $columnWidth,
@@ -93,6 +110,15 @@ struct ReaderAppearanceSheet: View {
 						largerImage: "arrow.left.and.line.vertical.and.arrow.right",
 						valueText: Self.points
 					)
+				}
+
+				Section {
+					Toggle("Text Sizes", isOn: $styles.bookTextSizes)
+					Toggle("Drop Caps", isOn: $styles.bookDropCaps)
+				} header: {
+					Text("Book Styles")
+				} footer: {
+					Text("Turn these off to set every book the same way, whatever its own styles say.")
 				}
 
 				Section {
@@ -131,7 +157,7 @@ struct ReaderAppearanceSheet: View {
 		lineHeight = ReaderTypography.defaultLineHeight
 		paragraphSpacing = ReaderTypography.defaultParagraphSpacing
 		columnWidth = ReaderTypography.defaultColumnWidth
-		isJustified = true
+		styles = ReaderStyleSettings()
 	}
 
 	private func close() {

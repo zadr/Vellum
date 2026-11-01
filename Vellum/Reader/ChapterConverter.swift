@@ -14,6 +14,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	static let imageAttribute = NSAttributedString.Key("VellumImage")
 	/// Marks the letters of a drop cap at the start of a paragraph. The value is how many lines it spans.
 	static let dropCapAttribute = NSAttributedString.Key("VellumDropCap")
+	/// The `ParagraphFormat` for the paragraph the text belongs to.
+	static let formatAttribute = NSAttributedString.Key("VellumParagraphFormat")
 
 	private enum Block: Hashable {
 		case paragraph
@@ -36,6 +38,9 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var isOrderedList = false
 		var listCount = 0
 		var dropCapLines: Int?
+		var css = CSSStyle()
+		/// The element's text size in points, for resolving `em` lengths.
+		var fontSize = 0.0
 	}
 
 	/// The style that applies to text at the current point, after inheriting from every open element.
@@ -77,7 +82,12 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 	private var fonts: [String: CTFont] = [:]
 	private var attributeCache: [String: [NSAttributedString.Key: Any]] = [:]
-	private var paragraphStyles: [String: CTParagraphStyle] = [:]
+	/// The format of the paragraph being built, made when its first text arrives.
+	private var format: ParagraphFormat?
+	/// The most recent paragraph's format, which takes the bottom margins of blocks that close after it.
+	private var lastFormat: ParagraphFormat?
+	/// Top margins of blocks opened since the last paragraph, which the next paragraph starts with.
+	private var pendingSpaceBefore = 0.0
 
 	private init(file: URL, typography: ReaderTypography, textArea: CGSize, styleSheets: StyleSheetCache) {
 		self.file = file
@@ -163,11 +173,16 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		let element = makeElement(name: name, css: css)
 		if element.block != nil {
 			finishParagraph()
-			if let lines = styleSheet.firstLetterStyle(forTag: name, classes: classes).dropCapLines {
+			if typography.styles.bookDropCaps, let lines = styleSheet.firstLetterStyle(forTag: name, classes: classes).dropCapLines {
 				pendingDropCapLines = lines
 			}
 		}
 		elements.append(element)
+		elements[elements.count - 1].fontSize = typography.size * currentStyle().fontScale
+
+		if element.block != nil {
+			pendingSpaceBefore = max(pendingSpaceBefore, verticalSpace(of: elements[elements.count - 1], side: "top"))
+		}
 
 		if name == "li" {
 			appendListMarker()
@@ -192,6 +207,11 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		guard let index = elements.lastIndex(where: { $0.name == name }) else { return }
 		let closed = elements[index...]
 		let closesBlock = closed.contains { $0.block != nil }
+		for element in closed.reversed() where element.block != nil {
+			if let lastFormat {
+				lastFormat.spaceAfter = max(lastFormat.spaceAfter, verticalSpace(of: element, side: "bottom"))
+			}
+		}
 		elements.removeSubrange(index...)
 
 		if closesBlock {
@@ -263,13 +283,20 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		element.isItalic = css.isItalic ?? element.isItalic
 		element.fontScale = css.fontScale ?? element.fontScale
 
-		// Books often nudge the size of all their body text, which would override the reader's text size setting.
-		// Small nudges on whole blocks are ignored; deliberately large or small blocks, like titles and notes, keep theirs.
-		if element.block == .paragraph || element.block == .quote || element.block == .listItem, let scale = css.fontScale, (0.75...1.1).contains(scale) {
+		// Books often nudge the size of all their body text. When that's overridden, small nudges on whole blocks are
+		// ignored, while deliberately large or small blocks, like titles and notes, keep theirs.
+		if !typography.styles.bookTextSizes, element.block == .paragraph || element.block == .quote || element.block == .listItem, let scale = css.fontScale, (0.75...1.1).contains(scale) {
 			element.fontScale = nil
 		}
 		element.alignment = css.alignment ?? element.alignment
-		element.dropCapLines = css.dropCapLines
+
+		if typography.styles.bookDropCaps {
+			element.dropCapLines = css.dropCapLines
+		} else if css.dropCapLines != nil {
+			// With drop caps off, the letter is set like the rest of the text.
+			element.fontScale = nil
+		}
+		element.css = css
 		return element
 	}
 
@@ -305,7 +332,6 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		var attributes: [NSAttributedString.Key: Any] = [
 			NSAttributedString.Key(kCTFontAttributeName as String): font(for: style),
-			NSAttributedString.Key(kCTParagraphStyleAttributeName as String): paragraphStyle(for: style),
 			// Text takes its color from the page, so changing themes doesn't need a new layout.
 			NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
 			// Standard ligatures, like fi and fl, wherever the font has them.
@@ -317,6 +343,13 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		}
 
 		attributeCache[key] = attributes
+		return attributes
+	}
+
+	/// The attributes for text in the current paragraph, starting the paragraph's format if this is its first text.
+	private func paragraphAttributes(for style: Style) -> [NSAttributedString.Key: Any] {
+		var attributes = attributes(for: style)
+		attributes[Self.formatAttribute] = format ?? makeFormat(for: style)
 		return attributes
 	}
 
@@ -339,48 +372,119 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		return font
 	}
 
-	private func paragraphStyle(for style: Style) -> CTParagraphStyle {
-		let key = "\(style.block)-\(style.alignment.rawValue)"
-		if let paragraphStyle = paragraphStyles[key] {
-			return paragraphStyle
-		}
-
+	/// The format for a paragraph starting now, from its block's defaults and the styles of the elements it's in.
+	private func makeFormat(for style: Style) -> ParagraphFormat {
+		let format = ParagraphFormat()
+		let styles = typography.styles
 		let size = typography.size
-		let spacing = size * typography.paragraphSpacing
-		let lineHeight = typography.lineHeight
-		var alignment = style.alignment
-		var values: [CGFloat] = switch style.block {
-		// First-line indent, head indent, space before, space after, line height multiple.
-		case .paragraph, .preformatted: [0, 0, 0, spacing, lineHeight]
-		case .heading: [0, 0, size * 1.2, max(spacing, size * 0.5), max(lineHeight * 0.9, 1)]
-		case .quote: [size * 1.5, size * 1.5, 0, spacing, lineHeight]
-		case .listItem: [size * 0.5, size * 1.5, 0, spacing / 2, lineHeight]
-		case .image: [0, 0, size * 0.3, max(spacing, size * 0.3), 1]
+		let fontSize = size * style.fontScale
+
+		format.lineHeight = typography.lineHeight
+		if styles.bookLineHeight, let lineHeight = bookLineHeight(fontSize: fontSize, style: style) {
+			format.lineHeight = lineHeight
 		}
 
-		if style.block == .image {
-			alignment = .center
-		} else if alignment == .natural, style.block != .preformatted, !isHeading(style.block) {
-			alignment = typography.isJustified ? .justified : .natural
-		}
+		if styles.bookParagraphSpacing {
+			// Book margins, gathered from the blocks that opened before this paragraph and closed after it.
+			format.spaceBefore = pendingSpaceBefore
+		} else {
+			let spacing = size * typography.paragraphSpacing
+			format.spaceAfter = spacing
+			// Large gaps, like those before a new section, are kept.
+			format.spaceBefore = pendingSpaceBefore
 
-		let paragraphStyle = withUnsafeBytes(of: &alignment) { alignmentBytes in
-			values.withUnsafeMutableBufferPointer { values in
-				let size = MemoryLayout<CGFloat>.size
-				let settings = [
-					CTParagraphStyleSetting(spec: .alignment, valueSize: MemoryLayout<CTTextAlignment>.size, value: alignmentBytes.baseAddress!),
-					CTParagraphStyleSetting(spec: .firstLineHeadIndent, valueSize: size, value: values.baseAddress!),
-					CTParagraphStyleSetting(spec: .headIndent, valueSize: size, value: values.baseAddress! + 1),
-					CTParagraphStyleSetting(spec: .paragraphSpacingBefore, valueSize: size, value: values.baseAddress! + 2),
-					CTParagraphStyleSetting(spec: .paragraphSpacing, valueSize: size, value: values.baseAddress! + 3),
-					CTParagraphStyleSetting(spec: .lineHeightMultiple, valueSize: size, value: values.baseAddress! + 4),
-				]
-				return CTParagraphStyleCreate(settings, settings.count)
+			switch style.block {
+			case .heading:
+				format.spaceBefore = max(format.spaceBefore, size * 1.2)
+				format.spaceAfter = max(spacing, size * 0.5)
+			case .listItem:
+				format.spaceAfter = spacing / 2
+			case .image:
+				format.spaceBefore = max(format.spaceBefore, size * 0.3)
+				format.spaceAfter = max(spacing, size * 0.3)
+			case .paragraph, .preformatted, .quote:
+				break
 			}
 		}
+		pendingSpaceBefore = 0
 
-		paragraphStyles[key] = paragraphStyle
-		return paragraphStyle
+		switch style.block {
+		case .heading:
+			format.lineHeight = max(format.lineHeight * 0.9, 1)
+		case .quote:
+			format.indent = size * 1.5
+		case .listItem:
+			format.indent = size * 1.5
+			format.firstLineIndent = -size
+		case .image:
+			format.lineHeight = 1
+		case .paragraph, .preformatted:
+			break
+		}
+
+		var alignment = style.alignment
+		if style.block == .image {
+			alignment = .center
+		} else if alignment == .natural || alignment == .justified, style.block != .preformatted, !isHeading(style.block) {
+			switch styles.justification {
+			case .book: break
+			case .justified: alignment = .justified
+			case .ragged: alignment = .natural
+			}
+		}
+		format.alignment = alignment
+
+		self.format = format
+		lastFormat = format
+		return format
+	}
+
+	/// The book's line height for text in the current elements, as a multiple of the font's natural line height.
+	private func bookLineHeight(fontSize: Double, style: Style) -> Double? {
+		// Line height is inherited, so the innermost element that sets it wins.
+		guard let value = elements.last(where: { $0.css.properties["line-height"] != nil })?.css.properties["line-height"]?.lowercased() else { return nil }
+
+		let cssLineHeight: Double
+		if let number = Double(value) {
+			cssLineHeight = number
+		} else if let length = CSSLength(value), length.unit != .percent {
+			cssLineHeight = length.points(fontSize: fontSize, width: 0) / fontSize
+		} else if let length = CSSLength(value) {
+			cssLineHeight = length.value / 100
+		} else {
+			return nil
+		}
+
+		// CSS measures line height against the text size; the typesetter against the font's ascent plus descent.
+		let font = font(for: style)
+		let natural = (CTFontGetAscent(font) + CTFontGetDescent(font)) / CTFontGetSize(font)
+		return min(max(cssLineHeight / natural, 0.8), 3)
+	}
+
+	/// The space a block wants above or below it, from its margin and padding on that side.
+	private func verticalSpace(of element: Element, side: String) -> Double {
+		let fontSize = element.fontSize
+		let margin = (element.css.length("margin-\(side)") ?? Self.defaultMargin(for: element.name))?.points(fontSize: fontSize, width: textArea.width) ?? 0
+		let padding = element.css.length("padding-\(side)")?.points(fontSize: fontSize, width: textArea.width) ?? 0
+		let space = min(max(margin + padding, 0), typography.size * 4)
+
+		// With the book's spacing overridden, only gaps big enough to mark a new section are kept.
+		if !typography.styles.bookParagraphSpacing, space < typography.size * 2 {
+			return 0
+		}
+		return space
+	}
+
+	/// Browsers' default margins, for books that don't set their own.
+	private static func defaultMargin(for name: String) -> CSSLength? {
+		switch name {
+		case "p", "blockquote", "ul", "ol", "dl", "pre", "figure", "h4": CSSLength("1em")
+		case "h1": CSSLength("0.67em")
+		case "h2": CSSLength("0.83em")
+		case "h3": CSSLength("1em")
+		case "h5", "h6": CSSLength("1.5em")
+		default: nil
+		}
 	}
 
 	private func isHeading(_ block: Block) -> Bool {
@@ -422,11 +526,11 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			}
 		}
 
-		output.append(NSAttributedString(string: text, attributes: attributes(for: style)))
+		output.append(NSAttributedString(string: text, attributes: paragraphAttributes(for: style)))
 	}
 
 	private func dropCap(_ letters: String, lines: Int, style: Style) -> NSAttributedString {
-		var attributes = attributes(for: style)
+		var attributes = paragraphAttributes(for: style)
 		attributes[Self.dropCapAttribute] = lines
 		return NSAttributedString(string: letters, attributes: attributes)
 	}
@@ -464,6 +568,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 	/// Ends the current paragraph. The newline takes the paragraph's style, as Core Text expects.
 	private func finishParagraph() {
+		format = nil
 		guard output.length > 0 else { return }
 
 		while lastCharacter == Self.space {
@@ -490,7 +595,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		finishParagraph()
 		var style = currentStyle()
 		style.alignment = .center
-		output.append(NSAttributedString(string: "⁂\n", attributes: attributes(for: style)))
+		output.append(NSAttributedString(string: "⁂\n", attributes: paragraphAttributes(for: style)))
+		format = nil
 	}
 
 	private func appendImage(_ source: String) {
@@ -518,13 +624,14 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			style.block = .image
 		}
 
-		var imageAttributes = attributes(for: style)
+		var imageAttributes = paragraphAttributes(for: style)
 		imageAttributes[NSAttributedString.Key(kCTRunDelegateAttributeName as String)] = delegate
 		imageAttributes[Self.imageAttribute] = run
 		output.append(NSAttributedString(string: Self.objectReplacement, attributes: imageAttributes))
 
 		if !isInline {
-			output.append(NSAttributedString(string: "\n", attributes: attributes(for: style)))
+			output.append(NSAttributedString(string: "\n", attributes: paragraphAttributes(for: style)))
+			format = nil
 		}
 	}
 
@@ -539,7 +646,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		for line in HTMLEntities.decoded(body).split(separator: "\n") {
 			let text = line.replacing(/\s+/, with: " ").trimmingCharacters(in: .whitespaces)
 			guard !text.isEmpty else { continue }
-			output.append(NSAttributedString(string: text + "\n", attributes: attributes(for: style)))
+			output.append(NSAttributedString(string: text + "\n", attributes: paragraphAttributes(for: style)))
+			format = nil
 		}
 	}
 

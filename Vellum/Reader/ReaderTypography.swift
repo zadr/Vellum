@@ -22,14 +22,14 @@ nonisolated struct ReaderTypography: Equatable, Sendable {
 	var font: ReaderFont
 	/// The body text size in points, already adjusted for Dynamic Type and the reader's text size.
 	var size: Double
-	/// A multiple of the font's natural line height.
+	/// A multiple of the font's natural line height. Used when the book's line heights are overridden, or it sets none.
 	var lineHeight = Self.defaultLineHeight
-	/// Space after each paragraph, as a multiple of the text size.
+	/// Space after each paragraph, as a multiple of the text size. Used when the book's spacing is overridden.
 	var paragraphSpacing = Self.defaultParagraphSpacing
 	/// The widest a line of text may be, in points. Narrower screens use all the room they have.
 	var columnWidth = Self.defaultColumnWidth
-	/// Whether body text is set flush on both sides. Headings and centered text keep their own alignment.
-	var isJustified = true
+	/// Which parts of the book's own styling to follow.
+	var styles = ReaderStyleSettings()
 
 	/// The widest column that fits on a page of this width.
 	static func maximumColumnWidth(forPageWidth width: Double) -> Double {
