@@ -25,6 +25,26 @@ nonisolated struct TypesetLine: @unchecked Sendable {
 	var dropCap: DropCap?
 	/// How many following lines must share this line's page, so a drop cap isn't split across pages.
 	var keepWithNext = 0
+	/// A rule drawn above the line, which starts its paragraph, or below it, which ends its paragraph.
+	var borderTop = 0.0
+	var borderBottom = 0.0
+	/// A bar beside the line, and how far from the column's left the paragraph's text starts.
+	var borderLeft = 0.0
+	var paragraphIndent = 0.0
+	var paragraphWidth = 0.0
+
+	/// The gap between a rule and the text it's next to.
+	static let ruleGap = 6.0
+
+	/// Room taken above the text by a top rule.
+	var spaceAboveText: Double {
+		borderTop > 0 ? borderTop + Self.ruleGap : 0
+	}
+
+	/// The line's height including room for any rules, which is what the page stacks.
+	var totalHeight: Double {
+		height + spaceAboveText + (borderBottom > 0 ? borderBottom + Self.ruleGap : 0)
+	}
 }
 
 nonisolated extension TypesetLine {
@@ -33,6 +53,11 @@ nonisolated extension TypesetLine {
 		var line = TypesetLine(location: range.lowerBound, length: range.count, line: line, x: x, height: height, descent: descent, spaceBefore: spaceBefore)
 		line.dropCap = dropCap
 		line.keepWithNext = keepWithNext
+		line.borderTop = borderTop
+		line.borderBottom = borderBottom
+		line.borderLeft = borderLeft
+		line.paragraphIndent = paragraphIndent
+		line.paragraphWidth = paragraphWidth
 		return line
 	}
 }

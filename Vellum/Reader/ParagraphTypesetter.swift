@@ -99,6 +99,19 @@ nonisolated struct ParagraphTypesetter {
 			start = lineBreak.next
 		}
 
+		// The gap a rule needs is added to the space around the paragraph, so it never touches the text.
+		for index in lines.indices {
+			lines[index].borderLeft = style.borderLeft
+			lines[index].paragraphIndent = style.indent
+			lines[index].paragraphWidth = width - style.indent - style.rightIndent
+		}
+		if style.borderTop > 0, !lines.isEmpty {
+			lines[0].borderTop = style.borderTop
+		}
+		if style.borderBottom > 0, !lines.isEmpty {
+			lines[lines.count - 1].borderBottom = style.borderBottom
+		}
+
 		if let dropCap, !lines.isEmpty {
 			// The letter's baseline lines up with the baseline of the last line it spans.
 			let spanned = lines.prefix(dropCap.lines)

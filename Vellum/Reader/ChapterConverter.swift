@@ -47,6 +47,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var css = CSSStyle()
 		/// The element's text size in points, for resolving `em` lengths.
 		var fontSize = 0.0
+		/// How many paragraphs have started inside the element, so its top border goes on the first.
+		var paragraphCount = 0
 	}
 
 	/// The style that applies to text at the current point, after inheriting from every open element.
@@ -240,9 +242,18 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		for element in closed.reversed() where element.block != nil {
 			if let lastFormat {
 				lastFormat.spaceAfter = max(lastFormat.spaceAfter, verticalSpace(of: element, side: "bottom"))
+				if typography.styles.bookBorders, element.paragraphCount > 0, let width = element.css.borderWidth("bottom") {
+					lastFormat.borderBottom = max(lastFormat.borderBottom, width)
+				}
 			}
 		}
 		elements.removeSubrange(index...)
+
+		// A block with a border but no text, like an empty div used as a rule, still draws its line.
+		if typography.styles.bookBorders, let element = closed.first, element.block != nil, element.paragraphCount == 0,
+		   let width = element.css.borderWidth("top") ?? element.css.borderWidth("bottom") {
+			appendRuleLine(width: width)
+		}
 
 		if closesBlock {
 			finishParagraph()
@@ -516,6 +527,10 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			break
 		}
 
+		if styles.bookBorders {
+			applyBorders(to: format)
+		}
+
 		if styles.bookMargins {
 			// The book's margins and padding, added up through every block the paragraph is in.
 			let blocks = elements.filter { $0.block != nil && $0.name != "body" && $0.name != "html" }
@@ -549,6 +564,21 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		lastFormat = format
 		formats.append(format)
 		return format
+	}
+
+	/// Borders on the innermost block draw around this paragraph. A border on an enclosing block is drawn on its
+	/// first paragraph (top), last paragraph (bottom, set when it closes), and every paragraph (left).
+	private func applyBorders(to format: ParagraphFormat) {
+		for (index, element) in elements.enumerated() where element.block != nil {
+			let isInnermost = !elements[(index + 1)...].contains { $0.block != nil }
+			if isInnermost || element.paragraphCount == 0, let width = element.css.borderWidth("top") {
+				format.borderTop = max(format.borderTop, width)
+			}
+			if let width = element.css.borderWidth("left") {
+				format.borderLeft = max(format.borderLeft, width)
+			}
+			elements[index].paragraphCount += 1
+		}
 	}
 
 	/// The space a block wants beside it, from its margin and padding on that side.
@@ -767,6 +797,16 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		elements[listIndex].listCount += 1
 		let marker = elements[listIndex].isOrderedList ? "\(elements[listIndex].listCount). " : "• "
 		appendText(marker, collapsingWhitespace: false)
+	}
+
+	/// A paragraph holding nothing but a horizontal line.
+	private func appendRuleLine(width: Double) {
+		finishParagraph()
+		let format = makeFormat(for: currentStyle())
+		format.borderTop = width
+		format.alignment = .natural
+		output.append(NSAttributedString(string: "\u{200B}\n", attributes: paragraphAttributes(for: currentStyle())))
+		self.format = nil
 	}
 
 	private func appendRule() {

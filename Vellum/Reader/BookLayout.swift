@@ -91,7 +91,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 
 			// A page holding only an image, like a cover or a map, looks best centered.
 			if mode == .pages, lineTops.count == 1, !ImageRun.images(in: lines[first].line).isEmpty {
-				lineTops[0] = textRect.minY + max((textRect.height - lines[first].height) / 2, 0)
+				lineTops[0] = textRect.minY + max((textRect.height - lines[first].totalHeight) / 2, 0)
 			}
 
 			let height = mode == .pages ? pageSize.height : max((textRect.minY + y).rounded(.up), 1)
@@ -101,7 +101,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		for (index, line) in lines.enumerated() {
 			var gap = index == first && mode == .pages ? 0 : line.spaceBefore
 			// Lines a drop cap spans have to fit on the same page as it.
-			let needed = lines[index...].prefix(line.keepWithNext + 1).reduce(0) { $0 + $1.height }
+			let needed = lines[index...].prefix(line.keepWithNext + 1).reduce(0) { $0 + $1.totalHeight }
 
 			if index > first, y + gap + needed > textRect.height {
 				finishPage(at: index)
@@ -112,7 +112,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 			}
 
 			tops.append(y + gap)
-			y += gap + line.height
+			y += gap + line.totalHeight
 		}
 
 		if lines.isEmpty {
@@ -172,7 +172,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		let page = pages[index]
 		let lines = chapters[page.chapter].lines
 
-		for (line, top) in zip(lines[page.firstLine...], page.lineTops) where top + line.height > y {
+		for (line, top) in zip(lines[page.firstLine...], page.lineTops) where top + line.totalHeight > y {
 			return line.location
 		}
 		return page.location + page.length
@@ -217,7 +217,10 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		context.textMatrix = .identity
 		context.setFillColor(textColor)
 
-		for (line, top) in zip(lines[page.firstLine...], page.lineTops) {
+		for (line, boxTop) in zip(lines[page.firstLine...], page.lineTops) {
+			drawBorders(of: line, boxTop: boxTop, pageHeight: page.height, context: context)
+
+			let top = boxTop + line.spaceAboveText
 			let origin = CGPoint(x: textRect.minX + line.x, y: page.height - (top + line.height - line.descent))
 			context.textPosition = origin
 			CTLineDraw(line.line, context)
@@ -228,6 +231,24 @@ nonisolated final class BookLayout: @unchecked Sendable {
 				context.textPosition = CGPoint(x: textRect.minX + dropCap.x, y: page.height - (top + dropCap.baseline))
 				CTLineDraw(dropCap.line, context)
 			}
+		}
+	}
+
+	/// Draws a line's rules, in the flipped, bottom-left-origin coordinates `draw` sets up.
+	private func drawBorders(of line: TypesetLine, boxTop: Double, pageHeight: Double, context: CGContext) {
+		let left = textRect.minX + line.paragraphIndent
+		let width = line.paragraphWidth
+
+		if line.borderTop > 0 {
+			context.fill(CGRect(x: left, y: pageHeight - boxTop - line.borderTop, width: width, height: line.borderTop))
+		}
+		if line.borderBottom > 0 {
+			let bottom = boxTop + line.totalHeight
+			context.fill(CGRect(x: left, y: pageHeight - bottom, width: width, height: line.borderBottom))
+		}
+		if line.borderLeft > 0 {
+			// Beside the text, in the paragraph's left margin, spanning the whole line so bars join up.
+			context.fill(CGRect(x: left - line.borderLeft - TypesetLine.ruleGap, y: pageHeight - boxTop - line.totalHeight, width: line.borderLeft, height: line.totalHeight))
 		}
 	}
 }

@@ -13,6 +13,10 @@ nonisolated final class ParagraphFormat: @unchecked Sendable {
 	var lineHeight = 1.0
 	var spaceBefore = 0.0
 	var spaceAfter = 0.0
+	/// Widths of rules drawn above, below, and to the left of the paragraph. Zero for none.
+	var borderTop = 0.0
+	var borderBottom = 0.0
+	var borderLeft = 0.0
 
 	init() {}
 

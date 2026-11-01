@@ -36,9 +36,11 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 	var bookTextEffects = true
 	/// Use the fonts the book chooses or embeds, where it chooses one, instead of the reader's font.
 	var bookFonts = true
+	/// Draw the book's borders and rules.
+	var bookBorders = true
 
 	private enum CodingKeys: String, CodingKey {
-		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents, bookMargins, bookTextEffects, bookFonts
+		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents, bookMargins, bookTextEffects, bookFonts, bookBorders
 	}
 
 	init() {}
@@ -56,6 +58,7 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 		bookMargins = try container.decodeIfPresent(Bool.self, forKey: .bookMargins) ?? defaults.bookMargins
 		bookTextEffects = try container.decodeIfPresent(Bool.self, forKey: .bookTextEffects) ?? defaults.bookTextEffects
 		bookFonts = try container.decodeIfPresent(Bool.self, forKey: .bookFonts) ?? defaults.bookFonts
+		bookBorders = try container.decodeIfPresent(Bool.self, forKey: .bookBorders) ?? defaults.bookBorders
 	}
 }
 

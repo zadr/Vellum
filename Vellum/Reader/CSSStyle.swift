@@ -140,6 +140,21 @@ nonisolated struct CSSStyle: Sendable {
 		value("text-decoration-line") ?? value("text-decoration")
 	}
 
+	/// The width of a border on one side, in points, if the book draws one there.
+	func borderWidth(_ side: String) -> Double? {
+		let value = value("border-\(side)") ?? value("border")
+		guard let value, !value.contains("none"), !value.contains("hidden") else {
+			return length("border-\(side)-width").map { $0.points(fontSize: 16, width: 0) }.flatMap { $0 > 0 ? $0 : nil }
+		}
+
+		let parts = value.split(separator: " ").map(String.init)
+		guard parts.contains(where: { ["solid", "double", "dotted", "dashed", "groove", "ridge", "inset", "outset"].contains($0) }) || parts.contains(where: { CSSLength($0) != nil }) else { return nil }
+
+		let keywords = ["thin": 1.0, "medium": 3.0, "thick": 5.0]
+		let width = parts.lazy.compactMap { keywords[$0] ?? CSSLength($0)?.points(fontSize: 16, width: 0) }.first ?? 3
+		return width > 0 ? min(width, 8) : nil
+	}
+
 	var isHidden: Bool {
 		value("display") == "none"
 	}
