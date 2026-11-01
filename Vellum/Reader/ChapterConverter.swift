@@ -12,6 +12,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	}
 
 	static let imageAttribute = NSAttributedString.Key("VellumImage")
+	/// Marks the letters of a drop cap at the start of a paragraph. The value is how many lines it spans.
+	static let dropCapAttribute = NSAttributedString.Key("VellumDropCap")
 
 	private enum Block: Hashable {
 		case paragraph
@@ -33,6 +35,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var isPreformatted = false
 		var isOrderedList = false
 		var listCount = 0
+		var dropCapLines: Int?
 	}
 
 	/// The style that applies to text at the current point, after inheriting from every open element.
@@ -44,6 +47,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var alignment = CTTextAlignment.natural
 		var superscript = 0
 		var isPreformatted = false
+		var dropCapLines: Int?
 	}
 
 	private static let blockNames: Set<String> = [
@@ -68,6 +72,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	private var elements: [Element] = []
 	private var skipDepth = 0
 	private var styleText: String?
+	/// Set when a paragraph's style gives its first letter a drop cap, until that letter arrives.
+	private var pendingDropCapLines: Int?
 
 	private var fonts: [String: CTFont] = [:]
 	private var attributeCache: [String: [NSAttributedString.Key: Any]] = [:]
@@ -157,6 +163,9 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		let element = makeElement(name: name, css: css)
 		if element.block != nil {
 			finishParagraph()
+			if let lines = styleSheet.firstLetterStyle(forTag: name, classes: classes).dropCapLines {
+				pendingDropCapLines = lines
+			}
 		}
 		elements.append(element)
 
@@ -187,6 +196,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		if closesBlock {
 			finishParagraph()
+			pendingDropCapLines = nil
 		}
 	}
 
@@ -252,7 +262,14 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		element.isBold = css.isBold ?? element.isBold
 		element.isItalic = css.isItalic ?? element.isItalic
 		element.fontScale = css.fontScale ?? element.fontScale
+
+		// Books often nudge the size of all their body text, which would override the reader's text size setting.
+		// Small nudges on whole blocks are ignored; deliberately large or small blocks, like titles and notes, keep theirs.
+		if element.block == .paragraph || element.block == .quote || element.block == .listItem, let scale = css.fontScale, (0.75...1.1).contains(scale) {
+			element.fontScale = nil
+		}
 		element.alignment = css.alignment ?? element.alignment
+		element.dropCapLines = css.dropCapLines
 		return element
 	}
 
@@ -267,6 +284,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			style.alignment = element.alignment ?? style.alignment
 			style.superscript = element.superscript ?? style.superscript
 			style.isPreformatted = style.isPreformatted || element.isPreformatted
+			style.dropCapLines = element.dropCapLines ?? style.dropCapLines
 		}
 
 		style.fontScale = min(max(style.fontScale, 0.6), 2.5)
@@ -274,6 +292,12 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	}
 
 	private func attributes(for style: Style) -> [NSAttributedString.Key: Any] {
+		// The drop cap's own size doesn't matter: the typesetter draws it at a size worked out from the lines it spans.
+		var style = style
+		if style.dropCapLines != nil {
+			style.fontScale = 1
+		}
+
 		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.alignment.rawValue)-\(style.superscript)"
 		if let attributes = attributeCache[key] {
 			return attributes
@@ -375,7 +399,36 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		}
 
 		guard !text.isEmpty else { return }
-		output.append(NSAttributedString(string: text, attributes: attributes(for: currentStyle())))
+
+		let style = currentStyle()
+		let isParagraphStart = endsAtLineStart
+
+		// A drop cap only works at the very start of a paragraph; anywhere else, the letters stay in the line.
+		if let lines = style.dropCapLines, isParagraphStart {
+			output.append(dropCap(text, lines: lines, style: style))
+			return
+		}
+
+		if let lines = pendingDropCapLines, isParagraphStart {
+			pendingDropCapLines = nil
+
+			// Like CSS's first-letter, the drop cap takes the first letter plus any punctuation before it, such as a quote mark.
+			var letters = text.prefix { !$0.isLetter && !$0.isNumber && !$0.isWhitespace }
+			if let letter = text.dropFirst(letters.count).first, letter.isLetter || letter.isNumber {
+				letters = text.prefix(letters.count + 1)
+				output.append(dropCap(String(letters), lines: lines, style: style))
+				text = String(text.dropFirst(letters.count))
+				guard !text.isEmpty else { return }
+			}
+		}
+
+		output.append(NSAttributedString(string: text, attributes: attributes(for: style)))
+	}
+
+	private func dropCap(_ letters: String, lines: Int, style: Style) -> NSAttributedString {
+		var attributes = attributes(for: style)
+		attributes[Self.dropCapAttribute] = lines
+		return NSAttributedString(string: letters, attributes: attributes)
 	}
 
 	/// Collapses runs of HTML whitespace into single spaces. Written out by hand because this runs for every

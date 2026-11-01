@@ -9,6 +9,7 @@ nonisolated struct CSSStyle: Sendable {
 	/// Relative to the parent element's text size.
 	var fontScale: Double?
 	var isHidden = false
+	var floatsLeft: Bool?
 
 	init() {}
 
@@ -18,8 +19,8 @@ nonisolated struct CSSStyle: Sendable {
 			let parts = declaration.split(separator: ":", maxSplits: 1)
 			guard parts.count == 2 else { continue }
 
-			let property = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
-			let value = parts[1].replacing("!important", with: "").trimmingCharacters(in: .whitespaces).lowercased()
+			let property = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+			let value = parts[1].replacing("!important", with: "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
 			switch property {
 			case "text-align":
@@ -35,6 +36,8 @@ nonisolated struct CSSStyle: Sendable {
 				isBold = value == "bold" || value == "bolder" || (Int(value) ?? 400) >= 600
 			case "font-size":
 				fontScale = Self.fontScale(from: value) ?? fontScale
+			case "float":
+				floatsLeft = value == "left"
 			case "display":
 				isHidden = value == "none"
 			default:
@@ -49,7 +52,15 @@ nonisolated struct CSSStyle: Sendable {
 		isItalic = other.isItalic ?? isItalic
 		isBold = other.isBold ?? isBold
 		fontScale = other.fontScale ?? fontScale
+		floatsLeft = other.floatsLeft ?? floatsLeft
 		isHidden = isHidden || other.isHidden
+	}
+
+	/// How many lines a drop cap with this style spans, if the style makes one: a large letter floated to the left.
+	var dropCapLines: Int? {
+		guard floatsLeft == true, let fontScale, fontScale >= 1.8 else { return nil }
+		// Designers size drop caps by the lines they span; about 1.5× the text size per line covers how books do it.
+		return min(max(Int((fontScale / 1.5).rounded()), 2), 4)
 	}
 
 	private static func fontScale(from value: String) -> Double? {

@@ -62,13 +62,26 @@ nonisolated struct ParagraphTypesetter {
 
 	// MARK: Paragraphs
 
-	private func setParagraph(_ text: NSAttributedString, style: Paragraph, offset: Int, spaceBefore: Double) -> [TypesetLine] {
+	private func setParagraph(_ paragraph: NSAttributedString, style: Paragraph, offset paragraphOffset: Int, spaceBefore: Double) -> [TypesetLine] {
+		// A drop cap is taken out of the text and drawn beside the first lines, which are shortened to make room.
+		let dropCap = Self.dropCap(in: paragraph, lineHeight: style.lineHeight)
+		let capLength = dropCap?.length ?? 0
+		let text = capLength > 0 ? paragraph.attributedSubstring(from: NSRange(location: capLength, length: paragraph.length - capLength)) : paragraph
+		let offset = paragraphOffset + capLength
+
 		let string = text.string as NSString
 		let offsets = Self.characterOffsets(of: CTLineCreateWithAttributedString(text), length: string.length)
 		let isJustified = style.alignment == .justified
 
+		func inset(_ line: Int) -> Double {
+			if let dropCap, line < dropCap.lines {
+				return dropCap.width
+			}
+			return line == 0 ? style.firstLineIndent : style.indent
+		}
+
 		func lineWidth(_ line: Int) -> Double {
-			max(width - (line == 0 ? style.firstLineIndent : style.indent), 1)
+			max(width - inset(line), 1)
 		}
 
 		// Like TeX: try without hyphenation first, then with it, then accept loose lines; Core Text's own breaking is the last resort.
@@ -89,10 +102,52 @@ nonisolated struct ParagraphTypesetter {
 		var lines = [TypesetLine]()
 		var start = 0
 		for lineBreak in lineBreaks {
-			lines.append(makeLine(text, string: string, start: start, lineBreak: lineBreak, index: lines.count, style: style, offset: offset, lineWidth: lineWidth(lines.count), spaceBefore: lines.isEmpty ? spaceBefore : 0))
+			let index = lines.count
+			lines.append(makeLine(text, string: string, start: start, lineBreak: lineBreak, index: index, style: style, offset: offset, inset: inset(index), lineWidth: lineWidth(index), spaceBefore: lines.isEmpty ? spaceBefore : 0))
 			start = lineBreak.next
 		}
+
+		if let dropCap, !lines.isEmpty {
+			// The letter's baseline lines up with the baseline of the last line it spans.
+			let spanned = lines.prefix(dropCap.lines)
+			let last = spanned[spanned.endIndex - 1]
+			let baseline = spanned.dropLast().reduce(0) { $0 + $1.height } + last.height - last.descent
+
+			lines[0].dropCap = TypesetLine.DropCap(line: dropCap.line, baseline: baseline)
+			lines[0].keepWithNext = spanned.count - 1
+			lines[0] = lines[0].including(paragraphOffset..<(lines[0].location + lines[0].length))
+		}
 		return lines
+	}
+
+	/// A paragraph's drop cap, set at the size that makes its capital as tall as the lines it spans.
+	private static func dropCap(in paragraph: NSAttributedString, lineHeight: Double) -> (line: CTLine, length: Int, lines: Int, width: Double)? {
+		var range = NSRange()
+		guard
+			paragraph.length > 1,
+			let lines = paragraph.attribute(ChapterConverter.dropCapAttribute, at: 0, effectiveRange: &range) as? Int,
+			range.length < paragraph.length,
+			let attribute = paragraph.attribute(NSAttributedString.Key(kCTFontAttributeName as String), at: range.length, effectiveRange: nil)
+		else { return nil }
+
+		// Measured against the text after the cap, which is what the cap has to line up with.
+		let bodyFont = attribute as! CTFont
+		let bodySize = CTFontGetSize(bodyFont)
+		let lineAdvance = ((CTFontGetAscent(bodyFont) + CTFontGetDescent(bodyFont)) * lineHeight).rounded()
+		let capHeightRatio = CTFontGetCapHeight(bodyFont) / bodySize
+		guard capHeightRatio > 0 else { return nil }
+
+		let capHeight = Double(lines - 1) * lineAdvance + CTFontGetCapHeight(bodyFont)
+		let capFont = CTFontCreateCopyWithAttributes(bodyFont, capHeight / capHeightRatio, nil, nil)
+
+		let letters = NSMutableAttributedString(attributedString: paragraph.attributedSubstring(from: range))
+		let fullRange = NSRange(location: 0, length: letters.length)
+		letters.addAttribute(NSAttributedString.Key(kCTFontAttributeName as String), value: capFont, range: fullRange)
+		letters.removeAttribute(NSAttributedString.Key(kCTSuperscriptAttributeName as String), range: fullRange)
+
+		let line = CTLineCreateWithAttributedString(letters)
+		let width = CTLineGetTypographicBounds(line, nil, nil, nil) + bodySize * 0.3
+		return (line, range.length, lines, width.rounded(.up))
 	}
 
 	private static func paragraph(at index: Int, in text: NSAttributedString) -> Paragraph {
@@ -250,7 +305,7 @@ nonisolated struct ParagraphTypesetter {
 
 	// MARK: Building lines
 
-	private func makeLine(_ text: NSAttributedString, string: NSString, start: Int, lineBreak: Break, index: Int, style: Paragraph, offset: Int, lineWidth: Double, spaceBefore: Double) -> TypesetLine {
+	private func makeLine(_ text: NSAttributedString, string: NSString, start: Int, lineBreak: Break, index: Int, style: Paragraph, offset: Int, inset: Double, lineWidth: Double, spaceBefore: Double) -> TypesetLine {
 		var end = lineBreak.end
 		while end > start, [Self.space, Self.lineSeparator].contains(string.character(at: end - 1)) {
 			end -= 1
@@ -279,11 +334,10 @@ nonisolated struct ParagraphTypesetter {
 		var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
 		CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
 
-		let indent = index == 0 ? style.firstLineIndent : style.indent
 		let x = switch style.alignment {
-		case .center: indent + (lineWidth - lineWidthUsed) / 2
-		case .right: indent + lineWidth - lineWidthUsed
-		default: indent
+		case .center: inset + (lineWidth - lineWidthUsed) / 2
+		case .right: inset + lineWidth - lineWidthUsed
+		default: inset
 		}
 
 		return TypesetLine(

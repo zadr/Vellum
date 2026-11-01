@@ -100,8 +100,10 @@ nonisolated final class BookLayout: @unchecked Sendable {
 
 		for (index, line) in lines.enumerated() {
 			var gap = index == first && mode == .pages ? 0 : line.spaceBefore
+			// Lines a drop cap spans have to fit on the same page as it.
+			let needed = lines[index...].prefix(line.keepWithNext + 1).reduce(0) { $0 + $1.height }
 
-			if index > first, y + gap + line.height > textRect.height {
+			if index > first, y + gap + needed > textRect.height {
 				finishPage(at: index)
 				first = index
 				tops = []
@@ -220,6 +222,11 @@ nonisolated final class BookLayout: @unchecked Sendable {
 			context.textPosition = origin
 			CTLineDraw(line.line, context)
 			ImageRun.draw(in: line.line, at: origin, context: context)
+
+			if let dropCap = line.dropCap {
+				context.textPosition = CGPoint(x: textRect.minX, y: page.height - (top + dropCap.baseline))
+				CTLineDraw(dropCap.line, context)
+			}
 		}
 	}
 }
