@@ -9,16 +9,31 @@ nonisolated struct CSSStyle: Sendable {
 
 	init() {}
 
-	/// Parses declarations like `text-align: center; font-style: italic`.
+	/// Parses declarations like `text-align: center; font-style: italic`, including any marked `!important`.
 	init(declarations: String) {
+		let (normal, important) = Self.parse(declarations)
+		self = normal
+		merge(important)
+	}
+
+	/// Declarations split by importance, as the cascade applies `!important` ones after all others.
+	static func parse(_ declarations: String) -> (normal: CSSStyle, important: CSSStyle) {
+		var normal = CSSStyle(), important = CSSStyle()
+
 		for declaration in declarations.split(separator: ";") {
 			let parts = declaration.split(separator: ":", maxSplits: 1)
 			guard parts.count == 2 else { continue }
 
 			let property = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-			let value = parts[1].replacing("!important", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-			set(property, to: value)
+			var value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+			if let range = value.range(of: "!important", options: .caseInsensitive) {
+				value.removeSubrange(range)
+				important.set(property, to: value.trimmingCharacters(in: .whitespaces))
+			} else {
+				normal.set(property, to: value)
+			}
 		}
+		return (normal, important)
 	}
 
 	/// Later styles win, as they would in a browser.

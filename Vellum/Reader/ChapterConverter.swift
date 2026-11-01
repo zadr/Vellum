@@ -4,7 +4,7 @@ import ImageIO
 
 /// Turns a chapter's XHTML into text Core Text can lay out, keeping the structure a reader notices:
 /// paragraphs, headings, emphasis, quotes, lists, line breaks, and images.
-nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
+nonisolated final class ChapterConverter {
 	struct Output {
 		let text: NSAttributedString
 		/// Where each element with an `id` starts, so links and the table of contents can find it.
@@ -144,15 +144,10 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		guard let data = try? Data(contentsOf: file) else { return Output(text: NSAttributedString(), anchors: [:]) }
 		let markup = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
 
-		let parser = XMLParser(data: Data(HTMLEntities.xmlCompatible(markup).utf8))
-		parser.shouldProcessNamespaces = true
-		parser.shouldResolveExternalEntities = false
-		parser.delegate = self
-
-		if !parser.parse() {
+		if let document = HTMLNode.parse(Data(HTMLEntities.xmlCompatible(markup).utf8)) {
+			walk(document)
+		} else {
 			// Not well-formed XML, so fall back to the words alone rather than showing nothing.
-			output.setAttributedString(NSAttributedString())
-			anchors = [:]
 			appendPlainText(from: markup)
 		}
 
@@ -170,10 +165,22 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		return Output(text: output, anchors: anchors)
 	}
 
-	// MARK: XMLParserDelegate
+	// MARK: Walking the document
 
-	func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
-		let name = elementName.lowercased()
+	private func walk(_ node: HTMLNode) {
+		start(node)
+		for child in node.children {
+			switch child {
+			case .element(let element): walk(element)
+			case .text(let text): foundText(text)
+			}
+		}
+		end(node)
+	}
+
+	private func start(_ node: HTMLNode) {
+		let name = node.name
+		let attributes = node.attributes
 
 		if skipDepth > 0 || Self.skippedNames.contains(name) {
 			skipDepth += 1
@@ -210,8 +217,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			pendingLink = linkTarget(href)
 		}
 
-		let classes = attributes["class"]?.lowercased().split(separator: " ").map(String.init) ?? []
-		var css = styleSheet.style(forTag: name, classes: classes)
+		var css = styleSheet.style(for: node)
 		if let inline = attributes["style"] {
 			css.merge(CSSStyle(declarations: inline))
 		}
@@ -233,7 +239,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		let element = makeElement(name: name, css: css)
 		if element.block != nil {
 			finishParagraph()
-			if !isInTableCell, typography.styles.bookDropCaps, let lines = styleSheet.firstLetterStyle(forTag: name, classes: classes).dropCapLines {
+			if !isInTableCell, typography.styles.bookDropCaps, let lines = styleSheet.style(for: node, pseudoElement: "first-letter").dropCapLines {
 				pendingDropCapLines = lines
 			}
 		}
@@ -241,10 +247,10 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		elements[elements.count - 1].fontSize = typography.size * currentStyle().fontScale
 
 		if typography.styles.bookTextEffects {
-			if let before = styleSheet.generatedStyle(forTag: name, classes: classes, after: false).generatedContent(quoteDepth: &quoteDepth) {
+			if let before = styleSheet.style(for: node, pseudoElement: "before").generatedContent(quoteDepth: &quoteDepth) {
 				appendText(before, collapsingWhitespace: false)
 			}
-			elements[elements.count - 1].after = styleSheet.generatedStyle(forTag: name, classes: classes, after: true)
+			elements[elements.count - 1].after = styleSheet.style(for: node, pseudoElement: "after")
 		}
 
 		if element.block != nil {
@@ -259,8 +265,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		}
 	}
 
-	func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName: String?) {
-		let name = elementName.lowercased()
+	private func end(_ node: HTMLNode) {
+		let name = node.name
 
 		if skipDepth > 0 {
 			skipDepth -= 1
@@ -312,7 +318,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		}
 	}
 
-	func parser(_ parser: XMLParser, foundCharacters string: String) {
+	private func foundText(_ string: String) {
 		guard skipDepth == 0 else { return }
 
 		if styleText != nil {
@@ -320,11 +326,6 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		} else if !elements.isEmpty {
 			appendText(string, collapsingWhitespace: !currentStyle().isPreformatted)
 		}
-	}
-
-	func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
-		guard skipDepth == 0, styleText != nil, let css = String(data: CDATABlock, encoding: .utf8) else { return }
-		styleText? += css
 	}
 
 	// MARK: Tables
