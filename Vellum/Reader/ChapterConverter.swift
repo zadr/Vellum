@@ -41,6 +41,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var smallCaps: CSSStyle.SmallCaps??
 		var textTransform: CSSStyle.TextTransform?
 		var letterSpacing: Double?
+		var fontFamily: String?
 		var css = CSSStyle()
 		/// The element's text size in points, for resolving `em` lengths.
 		var fontSize = 0.0
@@ -60,6 +61,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var textTransform = CSSStyle.TextTransform.none
 		/// In ems.
 		var letterSpacing = 0.0
+		/// A CSS `font-family` list, which may name fonts the book embeds.
+		var fontFamily: String?
 	}
 
 	private static let blockNames: Set<String> = [
@@ -217,6 +220,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		}
 
 		if name == "style", let css = styleText {
+			styleSheets.fonts.load(css: css, relativeTo: file)
 			styleSheet.merge(StyleSheet(css: css))
 			styleText = nil
 			return
@@ -320,6 +324,12 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			element.textTransform = css.textTransform
 			element.letterSpacing = css.letterSpacing.map { min(max($0, -0.1), 0.5) }
 		}
+		if typography.styles.bookFonts {
+			element.fontFamily = css.properties["font-family"]
+		}
+		if name == "pre" || name == "code" || name == "kbd" || name == "samp" || name == "tt" {
+			element.fontFamily = element.fontFamily ?? "monospace"
+		}
 		element.css = css
 		return element
 	}
@@ -341,6 +351,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			}
 			style.textTransform = element.textTransform ?? style.textTransform
 			style.letterSpacing = element.letterSpacing ?? style.letterSpacing
+			style.fontFamily = element.fontFamily ?? style.fontFamily
 		}
 
 		style.fontScale = min(max(style.fontScale, 0.6), 2.5)
@@ -354,7 +365,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			style.fontScale = 1
 		}
 
-		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)"
+		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)-\(style.fontFamily ?? "")"
 		if let attributes = attributeCache[key] {
 			return attributes
 		}
@@ -388,21 +399,46 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 	private func font(for style: Style) -> CTFont {
 		let size = (typography.size * style.fontScale).rounded()
-		let key = "\(size)-\(style.isBold)-\(style.isItalic)"
+		let key = "\(size)-\(style.isBold)-\(style.isItalic)-\(style.fontFamily ?? "")"
 		if let font = fonts[key] {
 			return font
 		}
 
-		var font = typography.font.font(size: size)
+		if let families = style.fontFamily, let font = styleSheets.fonts.font(families: families, size: size, isBold: style.isBold, isItalic: style.isItalic) {
+			fonts[key] = font
+			return font
+		}
+
+		var font = Self.genericFont(families: style.fontFamily, size: size) ?? typography.font.font(size: size)
 		var traits = CTFontSymbolicTraits()
 		if style.isBold { traits.insert(.traitBold) }
 		if style.isItalic { traits.insert(.traitItalic) }
-		if !traits.isEmpty, let styled = CTFontCreateCopyWithSymbolicTraits(font, size, nil, traits, traits) {
+		if !traits.isEmpty, let styled = CTFontCreateCopyWithSymbolicTraits(font, CTFontGetSize(font), nil, traits, traits) {
 			font = styled
 		}
 
 		fonts[key] = font
 		return font
+	}
+
+	/// A system font for a family list whose first generic family is monospace or sans-serif. Serif and named
+	/// families the book doesn't embed fall back to the reader's font, which is itself a serif.
+	private static func genericFont(families: String?, size: Double) -> CTFont? {
+		guard let families else { return nil }
+
+		for family in families.lowercased().split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }) {
+			switch family {
+			case "monospace", "monospaced", "courier", "courier new", "freefontmono", "menlo", "consolas":
+				return CTFontCreateWithName("Menlo-Regular" as CFString, size * 0.9, nil)
+			case "sans-serif", "helvetica", "arial", "freefontsans", "verdana":
+				return CTFontCreateUIFontForLanguage(.system, size, nil)
+			case "serif", "georgia", "times", "times new roman", "freefontserif":
+				return nil
+			default:
+				continue
+			}
+		}
+		return nil
 	}
 
 	/// The format for a paragraph starting now, from its block's defaults and the styles of the elements it's in.
