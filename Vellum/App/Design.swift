@@ -16,6 +16,11 @@ enum Design {
 
 	/// Body text size in the reader before Dynamic Type and the reader's own text size are applied.
 	static let readerTextSize = 19.0
+	/// Covers in the Calibre library grid are at least this wide; the grid fits as many columns as it can.
+	static let gridCoverWidth = 104.0
+	static let continueReadingCoverWidth = 120.0
+	static let gridSpacing = 20.0
+
 	/// How far each level of a book's table of contents is indented.
 	static let contentsIndent = 16.0
 }

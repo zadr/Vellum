@@ -6,6 +6,8 @@ struct LibraryStore {
 	struct Snapshot: Codable {
 		var shelves: [Shelf]
 		var selectedShelfID: Shelf.ID?
+		/// Set when a Calibre library, rather than a shelf, is showing.
+		var selectedCalibreLibraryID: CalibreLibrary.ID?
 	}
 
 	var url = URL.documentsDirectory.appending(path: "Library.json")

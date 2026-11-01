@@ -3,22 +3,15 @@ import SwiftUI
 struct ShelfToolbar: ToolbarContent {
 	@Binding var sort: ShelfSort
 
+	let shelfMenu: ShelfTitleMenu
 	let scan: () -> Void
 	let enterISBN: () -> Void
-	let newShelf: () -> Void
-	let renameShelf: () -> Void
-	let deleteShelf: () -> Void
-	let openCalibre: () -> Void
 
 	var body: some ToolbarContent {
 		ToolbarItem(placement: .topBarLeading) {
 			Menu("Shelves", systemImage: "books.vertical") {
-				ShelfTitleMenu(newShelf: newShelf, renameShelf: renameShelf, deleteShelf: deleteShelf)
+				shelfMenu
 			}
-		}
-
-		ToolbarItem(placement: .topBarTrailing) {
-			Button("Calibre Library", systemImage: "server.rack", action: openCalibre)
 		}
 
 		ToolbarItem(placement: .topBarTrailing) {

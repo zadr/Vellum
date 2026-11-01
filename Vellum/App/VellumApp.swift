@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct VellumApp: App {
 	@State private var library = Library()
-	@State private var calibre = CalibreLibrary()
+	@State private var calibreLibraries = CalibreLibraries()
 
 	init() {
 		// Covers are fetched with AsyncImage, which relies on the shared URL cache. Give it room so shelves load instantly.
@@ -14,7 +14,7 @@ struct VellumApp: App {
 		WindowGroup {
 			ShelfView()
 				.environment(library)
-				.environment(calibre)
+				.environment(calibreLibraries)
 				.task {
 					await library.backfillAuthors()
 				}

@@ -100,6 +100,8 @@ final class ReaderModel {
 		guard let layout, let visiblePage, layout.pages.indices.contains(visiblePage) else { return }
 
 		position = layout.position(forPage: visiblePage)
+		position.fractionRead = Double(visiblePage + 1) / Double(layout.pages.count)
+		position.lastRead = .now
 		onPositionChange(position)
 	}
 }

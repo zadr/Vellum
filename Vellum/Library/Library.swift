@@ -17,6 +17,11 @@ final class Library {
 		didSet { save() }
 	}
 
+	/// Calibre libraries are listed with the shelves, so the library remembers when one of those is showing.
+	private(set) var selectedCalibreLibraryID: CalibreLibrary.ID? {
+		didSet { save() }
+	}
+
 	@ObservationIgnored private let store: LibraryStore
 	@ObservationIgnored private let client: OpenLibrary
 
@@ -28,6 +33,7 @@ final class Library {
 		self.client = client
 		self.shelves = shelves
 		selectedShelfID = shelves.first { $0.id == snapshot.selectedShelfID }?.id ?? shelves[0].id
+		selectedCalibreLibraryID = snapshot.selectedCalibreLibraryID
 
 		// Persists immediately so a library migrated from the old format is only migrated once.
 		save()
@@ -35,6 +41,21 @@ final class Library {
 
 	var selectedShelf: Shelf {
 		shelves.first { $0.id == selectedShelfID } ?? shelves[0]
+	}
+
+	var selection: ShelfSelection {
+		get {
+			selectedCalibreLibraryID.map(ShelfSelection.calibre) ?? .shelf(selectedShelfID)
+		}
+		set {
+			switch newValue {
+			case .shelf(let id):
+				selectedCalibreLibraryID = nil
+				selectedShelfID = id
+			case .calibre(let id):
+				selectedCalibreLibraryID = id
+			}
+		}
 	}
 
 	func entry(with id: Entry.ID) -> Entry? {
@@ -182,7 +203,7 @@ final class Library {
 
 		let shelf = Shelf(name: name.trimmingCharacters(in: .whitespacesAndNewlines))
 		shelves.append(shelf)
-		selectedShelfID = shelf.id
+		selection = .shelf(shelf.id)
 	}
 
 	func renameShelf(_ shelfID: Shelf.ID, to name: String) {
@@ -210,6 +231,6 @@ final class Library {
 	}
 
 	private func save() {
-		store.save(LibraryStore.Snapshot(shelves: shelves, selectedShelfID: selectedShelfID))
+		store.save(LibraryStore.Snapshot(shelves: shelves, selectedShelfID: selectedShelfID, selectedCalibreLibraryID: selectedCalibreLibraryID))
 	}
 }

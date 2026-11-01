@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-/// Reads and writes the Calibre catalog and reading positions, and decides where downloaded books live.
+/// Reads and writes one Calibre library's catalog and reading positions, and decides where its downloaded books live.
 struct CalibreStore {
 	struct Snapshot: Codable {
 		var serverAddress = ""
@@ -9,7 +9,10 @@ struct CalibreStore {
 		var positions: [CalibreBook.ID: ReadingPosition] = [:]
 	}
 
-	var directory = URL.applicationSupportDirectory.appending(path: "Calibre", directoryHint: .isDirectory)
+	/// Where the catalog and downloaded books are kept.
+	var directory: URL
+	/// Where books are unzipped for reading. The system may clear this; it's rebuilt when needed.
+	var cacheDirectory: URL
 
 	private let logger = Logger(subsystem: "net.thisismyinter.Vellum", category: "CalibreStore")
 
@@ -45,8 +48,15 @@ struct CalibreStore {
 		directory.appending(path: "Books/\(id).epub")
 	}
 
-	/// Where a downloaded EPUB is unzipped for reading. The system may clear this; it's rebuilt when needed.
 	func unpackedURL(for id: CalibreBook.ID) -> URL {
-		URL.cachesDirectory.appending(path: "Books/\(id)", directoryHint: .isDirectory)
+		cacheDirectory.appending(path: "Books/\(id)", directoryHint: .isDirectory)
+	}
+
+	/// Deletes the catalog, reading positions, and every downloaded book.
+	func removeAll() {
+		let fileManager = FileManager.default
+		try? fileManager.removeItem(at: url)
+		try? fileManager.removeItem(at: directory.appending(path: "Books"))
+		try? fileManager.removeItem(at: cacheDirectory.appending(path: "Books"))
 	}
 }

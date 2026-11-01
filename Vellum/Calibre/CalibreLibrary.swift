@@ -1,15 +1,18 @@
 import Foundation
 import Observation
 
-/// The books on the user's Calibre server, which of them are downloaded, and where the user is in each.
+/// The books on one of the user's Calibre servers, which of them are downloaded, and where the user is in each.
 @Observable
-final class CalibreLibrary {
+final class CalibreLibrary: Identifiable {
 	enum Status: Equatable {
 		case idle
 		case loading
 		case failed(String)
 	}
 
+	let id: UUID
+	/// What the library is called in the shelf list.
+	var name: String
 	private(set) var serverAddress: String
 	private(set) var books: [CalibreBook]
 	private(set) var status = Status.idle
@@ -23,9 +26,11 @@ final class CalibreLibrary {
 	@ObservationIgnored private let store: CalibreStore
 	@ObservationIgnored private var downloads: [CalibreBook.ID: Task<Void, Never>] = [:]
 
-	init(store: CalibreStore = CalibreStore()) {
+	init(id: UUID, name: String, store: CalibreStore) {
 		let snapshot = store.load()
 
+		self.id = id
+		self.name = name
 		self.store = store
 		serverAddress = snapshot.serverAddress
 		books = snapshot.books
@@ -44,11 +49,6 @@ final class CalibreLibrary {
 	}
 
 	// MARK: Server
-
-	/// Explains why an address can't be used, or returns `nil` if it looks fine.
-	func problem(withAddress address: String) -> String? {
-		CalibreClient(address: address) == nil ? "Enter your server’s address, like 192.168.1.92:8081." : nil
-	}
 
 	func connect(to address: String) async {
 		let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -148,6 +148,14 @@ final class CalibreLibrary {
 		downloadProgress[id] = fraction
 	}
 
+	/// Stops downloads and deletes everything stored for this library, before it's removed.
+	func removeAll() {
+		for task in downloads.values {
+			task.cancel()
+		}
+		store.removeAll()
+	}
+
 	private func deleteFiles(for id: CalibreBook.ID) {
 		try? FileManager.default.removeItem(at: store.bookURL(for: id))
 		try? FileManager.default.removeItem(at: store.unpackedURL(for: id))
@@ -157,6 +165,13 @@ final class CalibreLibrary {
 
 	func position(for id: CalibreBook.ID) -> ReadingPosition? {
 		positions[id]
+	}
+
+	/// Downloaded books the user has been reading, most recent first.
+	var recentlyRead: [CalibreBook] {
+		books
+			.filter { isDownloaded($0.id) && positions[$0.id]?.lastRead != nil }
+			.sorted { (positions[$0.id]?.lastRead ?? .distantPast) > (positions[$1.id]?.lastRead ?? .distantPast) }
 	}
 
 	func setPosition(_ position: ReadingPosition, for id: CalibreBook.ID) {
