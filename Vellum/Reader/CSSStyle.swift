@@ -97,10 +97,9 @@ nonisolated struct CSSStyle: Sendable {
 		}
 
 		guard let length = CSSLength(value) else { return nil }
-		// Pixel and point sizes are taken relative to the 16-pixel default. Odd sizes are kept from making text
-		// unreadable or a single word fill the page.
+		// Pixel and point sizes are taken relative to the 16-pixel default, so they scale with the reader's text size.
 		let scale = length.points(fontSize: 1, width: 1) / (length.unit == .points ? 16 : 1)
-		return min(max(scale, 0.6), 2.5)
+		return scale > 0 ? scale : nil
 	}
 
 	enum SmallCaps: Sendable {

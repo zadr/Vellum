@@ -27,6 +27,9 @@ nonisolated final class ParagraphFormat: @unchecked Sendable {
 	var keepWithNext = false
 	/// Filled behind the paragraph, from the background color of the block it's in.
 	var backgroundColor: CGColor?
+	/// Where that block's box sits: its distance from the column's left and right edges.
+	var backgroundLeft = 0.0
+	var backgroundRight = 0.0
 	/// For a table row: the table, whose columns the row's tab-separated cells line up in.
 	var table: TableColumns?
 

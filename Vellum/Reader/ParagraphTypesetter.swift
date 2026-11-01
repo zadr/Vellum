@@ -45,8 +45,11 @@ nonisolated struct ParagraphTypesetter {
 				// Like CSS margins, the space between paragraphs is the larger of the two, not their sum.
 				var paragraphLines = setParagraph(text.attributedSubstring(from: range), style: format, offset: start, spaceBefore: max(previousSpaceAfter, format.spaceBefore))
 				if let background = format.backgroundColor {
+					// The blocks are the same when their color objects are; a new block starts a new fill.
 					for index in paragraphLines.indices {
 						paragraphLines[index].backgroundColor = background
+						paragraphLines[index].backgroundLeft = format.backgroundLeft
+						paragraphLines[index].backgroundRight = format.backgroundRight
 						// Lines within a paragraph always join; the first joins the paragraph above if it shares the block.
 						paragraphLines[index].fillsSpaceAbove = index > 0 || previousBackground === background
 					}
@@ -88,8 +91,11 @@ nonisolated struct ParagraphTypesetter {
 			return line == 0 ? style.firstLineInset : style.indent
 		}
 
+		// As in CSS, margins can leave less room than a word needs; words then stick out rather than being split.
+		let longestWord = Self.longestWord(in: string, offsets: offsets)
+
 		func lineWidth(_ line: Int) -> Double {
-			max(width - inset(line) - style.rightIndent, 1)
+			max(width - inset(line) - style.rightIndent, longestWord, 1)
 		}
 
 		// Like TeX: try without hyphenation first, then with it, then accept loose lines; Core Text's own breaking is the last resort.
@@ -347,6 +353,19 @@ nonisolated struct ParagraphTypesetter {
 			}
 		}
 		return offsets
+	}
+
+	/// The width of the paragraph's widest unbreakable run of text.
+	private static func longestWord(in string: NSString, offsets: [Double]) -> Double {
+		var longest = 0.0
+		var start = 0
+		for index in 0...string.length {
+			let isBreak = index == string.length || [space, lineSeparator].contains(string.character(at: index))
+			guard isBreak else { continue }
+			longest = max(longest, offsets[index] - offsets[start])
+			start = index + 1
+		}
+		return longest
 	}
 
 	private static func hyphenWidth(in text: NSAttributedString, at index: Int) -> Double {

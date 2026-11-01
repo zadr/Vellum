@@ -123,8 +123,6 @@ nonisolated final class ChapterConverter {
 	private var pendingSpaceBefore = 0.0
 	/// Set by a block that asks for a page break before it, or one that closed asking for one after.
 	private var pendingPageBreak = false
-	/// Every paragraph's format, so indents every paragraph shares can be removed at the end.
-	private var formats: [ParagraphFormat] = []
 	/// The tables being read, innermost last, and the row in progress.
 	private var tables: [TableColumns] = []
 	private var rowCellLengths: [Int]?
@@ -159,15 +157,6 @@ nonisolated final class ChapterConverter {
 		}
 
 		trimTrailingWhitespace()
-
-		// Margins every paragraph shares come from wrappers around the whole chapter. The column width setting
-		// already decides that space, so they're removed rather than narrowing every page.
-		if let shared = formats.map(\.indent).min(), shared > 0 {
-			formats.forEach { $0.indent -= shared }
-		}
-		if let shared = formats.map(\.rightIndent).min(), shared > 0 {
-			formats.forEach { $0.rightIndent -= shared }
-		}
 
 		return Output(text: output, anchors: anchors)
 	}
@@ -465,7 +454,7 @@ nonisolated final class ChapterConverter {
 		if typography.styles.bookTextEffects {
 			element.smallCaps = css.smallCaps
 			element.textTransform = css.textTransform
-			element.letterSpacing = css.letterSpacing.map { min(max($0, -0.1), 0.5) }
+			element.letterSpacing = css.letterSpacing
 			element.isUnderlined = css.isUnderlined ?? element.isUnderlined
 			element.isStruckThrough = css.isStruckThrough ?? element.isStruckThrough
 		}
@@ -513,7 +502,6 @@ nonisolated final class ChapterConverter {
 			}
 		}
 
-		style.fontScale = min(max(style.fontScale, 0.6), 2.5)
 		return style
 	}
 
@@ -633,8 +621,10 @@ nonisolated final class ChapterConverter {
 		let fontSize = size * style.fontScale
 
 		format.lineHeight = typography.lineHeight
+		var hasBookLineHeight = false
 		if styles.bookLineHeight, let lineHeight = bookLineHeight(fontSize: fontSize, style: style) {
 			format.lineHeight = lineHeight
+			hasBookLineHeight = true
 		}
 
 		if styles.bookParagraphSpacing {
@@ -675,7 +665,10 @@ nonisolated final class ChapterConverter {
 
 		switch style.block {
 		case .heading:
-			format.lineHeight = max(format.lineHeight * 0.9, 1)
+			// Headings are set a little tighter than body text, unless the book says otherwise.
+			if !hasBookLineHeight {
+				format.lineHeight = max(format.lineHeight * 0.9, 1)
+			}
 		case .quote:
 			format.indent = size * 1.5
 		case .listItem:
@@ -692,17 +685,24 @@ nonisolated final class ChapterConverter {
 			applyBorders(to: format)
 		}
 
-		if styles.bookColors {
-			// The innermost block with a background fills behind the paragraph.
-			format.backgroundColor = elements.last { $0.block != nil && $0.backgroundColor != nil }?.backgroundColor
+		if styles.bookColors, let index = elements.lastIndex(where: { $0.block != nil && $0.backgroundColor != nil }) {
+			// The innermost block with a background fills its whole box: inside the margins of it and the blocks
+			// around it, but including its padding.
+			let outer = elements[..<index].filter { $0.block != nil && $0.name != "body" && $0.name != "html" }
+			let block = elements[index]
+			format.backgroundColor = block.backgroundColor
+			if styles.bookMargins {
+				let width = textArea.width
+				format.backgroundLeft = outer.reduce(0) { $0 + horizontalSpace(of: $1, side: "left") } + (block.css.length("margin-left")?.points(fontSize: block.fontSize, width: width) ?? 0)
+				format.backgroundRight = outer.reduce(0) { $0 + horizontalSpace(of: $1, side: "right") } + (block.css.length("margin-right")?.points(fontSize: block.fontSize, width: width) ?? 0)
+			}
 		}
 
 		if styles.bookMargins {
 			// The book's margins and padding, added up through every block the paragraph is in.
 			let blocks = elements.filter { $0.block != nil && $0.name != "body" && $0.name != "html" }
-			let limit = textArea.width * 0.4
-			format.indent = min(max(blocks.reduce(0) { $0 + horizontalSpace(of: $1, side: "left") }, 0), limit)
-			format.rightIndent = min(max(blocks.reduce(0) { $0 + horizontalSpace(of: $1, side: "right") }, 0), limit)
+			format.indent = blocks.reduce(0) { $0 + horizontalSpace(of: $1, side: "left") }
+			format.rightIndent = blocks.reduce(0) { $0 + horizontalSpace(of: $1, side: "right") }
 		}
 
 		var alignment = style.alignment
@@ -728,7 +728,6 @@ nonisolated final class ChapterConverter {
 
 		self.format = format
 		lastFormat = format
-		formats.append(format)
 		return format
 	}
 
@@ -783,7 +782,7 @@ nonisolated final class ChapterConverter {
 		// CSS measures line height against the text size; the typesetter against the font's ascent plus descent.
 		let font = font(for: style)
 		let natural = (CTFontGetAscent(font) + CTFontGetDescent(font)) / CTFontGetSize(font)
-		return min(max(cssLineHeight / natural, 0.8), 3)
+		return cssLineHeight > 0 ? cssLineHeight / natural : nil
 	}
 
 	/// The space a block wants above or below it, from its margin and padding on that side.
@@ -791,7 +790,7 @@ nonisolated final class ChapterConverter {
 		let fontSize = element.fontSize
 		let margin = (element.css.length("margin-\(side)") ?? Self.defaultMargin(for: element.name))?.points(fontSize: fontSize, width: textArea.width) ?? 0
 		let padding = element.css.length("padding-\(side)")?.points(fontSize: fontSize, width: textArea.width) ?? 0
-		let space = min(max(margin + padding, 0), typography.size * 4)
+		let space = max(margin + padding, 0)
 
 		// With the book's spacing overridden, only gaps big enough to mark a new section are kept.
 		if !typography.styles.bookParagraphSpacing, space < typography.size * 2 {

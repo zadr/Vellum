@@ -293,7 +293,9 @@ nonisolated final class BookLayout: @unchecked Sendable {
 			let gap = line.fillsSpaceAbove && !isFirstOnPage ? line.spaceBefore : 0
 			context.saveGState()
 			context.setFillColor(background)
-			context.fill(CGRect(x: left, y: pageHeight - boxTop - line.totalHeight, width: width, height: line.totalHeight + gap))
+			let boxLeft = textRect.minX + line.backgroundLeft
+			let boxWidth = max(textRect.width - line.backgroundLeft - line.backgroundRight, 0)
+			context.fill(CGRect(x: boxLeft, y: pageHeight - boxTop - line.totalHeight, width: boxWidth, height: line.totalHeight + gap))
 			context.restoreGState()
 		}
 
