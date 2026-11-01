@@ -35,6 +35,11 @@ nonisolated struct TypesetLine: @unchecked Sendable {
 	/// For a table row: each cell's lines, with their position from the line's left and top. `line` is then empty.
 	var cells: [(line: CTLine, x: Double, baseline: Double)] = []
 
+	/// Start a new page with this line.
+	var breaksPageBefore = false
+	/// Keep the paragraph's first lines and last lines together, as widows and orphans and headings need.
+	var keepWithPrevious = false
+
 	/// The gap between a rule and the text it's next to.
 	static let ruleGap = 6.0
 
@@ -61,6 +66,8 @@ nonisolated extension TypesetLine {
 		line.paragraphIndent = paragraphIndent
 		line.paragraphWidth = paragraphWidth
 		line.cells = cells
+		line.breaksPageBefore = breaksPageBefore
+		line.keepWithPrevious = keepWithPrevious
 		return line
 	}
 }

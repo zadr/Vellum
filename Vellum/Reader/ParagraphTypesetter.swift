@@ -56,7 +56,9 @@ nonisolated struct ParagraphTypesetter {
 
 	private func setParagraph(_ paragraph: NSAttributedString, style: ParagraphFormat, offset paragraphOffset: Int, spaceBefore: Double) -> [TypesetLine] {
 		if let table = style.table {
-			return [tableRow(paragraph, table: table, style: style, offset: paragraphOffset, spaceBefore: spaceBefore)]
+			var row = tableRow(paragraph, table: table, style: style, offset: paragraphOffset, spaceBefore: spaceBefore)
+			row.breaksPageBefore = style.breaksPageBefore
+			return [row]
 		}
 
 		// A drop cap is taken out of the text and drawn beside the first lines, which are shortened to make room.
@@ -111,6 +113,9 @@ nonisolated struct ParagraphTypesetter {
 		}
 		if style.borderTop > 0, !lines.isEmpty {
 			lines[0].borderTop = style.borderTop
+		}
+		if style.breaksPageBefore, !lines.isEmpty {
+			lines[0].breaksPageBefore = true
 		}
 		if style.borderBottom > 0, !lines.isEmpty {
 			lines[lines.count - 1].borderBottom = style.borderBottom

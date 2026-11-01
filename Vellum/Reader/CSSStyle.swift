@@ -200,6 +200,16 @@ nonisolated struct CSSStyle: Sendable {
 		return text.isEmpty ? nil : text
 	}
 
+	/// Whether the element must start on a new page.
+	var breaksPageBefore: Bool {
+		["always", "page", "left", "right"].contains(value("page-break-before") ?? value("break-before") ?? "")
+	}
+
+	/// Whether whatever follows the element must start on a new page.
+	var breaksPageAfter: Bool {
+		["always", "page", "left", "right"].contains(value("page-break-after") ?? value("break-after") ?? "")
+	}
+
 	var isHidden: Bool {
 		value("display") == "none"
 	}

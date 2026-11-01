@@ -17,6 +17,8 @@ nonisolated final class ParagraphFormat: @unchecked Sendable {
 	var borderTop = 0.0
 	var borderBottom = 0.0
 	var borderLeft = 0.0
+	/// Start the paragraph on a new page.
+	var breaksPageBefore = false
 	/// For a table row: the table, whose columns the row's tab-separated cells line up in.
 	var table: TableColumns?
 

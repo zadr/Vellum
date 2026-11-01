@@ -103,7 +103,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 			// Lines a drop cap spans have to fit on the same page as it.
 			let needed = lines[index...].prefix(line.keepWithNext + 1).reduce(0) { $0 + $1.totalHeight }
 
-			if index > first, y + gap + needed > textRect.height {
+			if index > first, (mode == .pages && line.breaksPageBefore) || y + gap + needed > textRect.height {
 				finishPage(at: index)
 				first = index
 				tops = []

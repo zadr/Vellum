@@ -40,9 +40,11 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 	var bookBorders = true
 	/// Lay tables out in columns. Off lists each cell on its own line.
 	var bookTables = true
+	/// Start a new page where the book asks, and keep lines together as it asks.
+	var bookPageBreaks = true
 
 	private enum CodingKeys: String, CodingKey {
-		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents, bookMargins, bookTextEffects, bookFonts, bookBorders, bookTables
+		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents, bookMargins, bookTextEffects, bookFonts, bookBorders, bookTables, bookPageBreaks
 	}
 
 	init() {}
@@ -62,6 +64,7 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 		bookFonts = try container.decodeIfPresent(Bool.self, forKey: .bookFonts) ?? defaults.bookFonts
 		bookBorders = try container.decodeIfPresent(Bool.self, forKey: .bookBorders) ?? defaults.bookBorders
 		bookTables = try container.decodeIfPresent(Bool.self, forKey: .bookTables) ?? defaults.bookTables
+		bookPageBreaks = try container.decodeIfPresent(Bool.self, forKey: .bookPageBreaks) ?? defaults.bookPageBreaks
 	}
 }
 

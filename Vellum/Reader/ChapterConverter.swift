@@ -110,6 +110,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	private var lastFormat: ParagraphFormat?
 	/// Top margins of blocks opened since the last paragraph, which the next paragraph starts with.
 	private var pendingSpaceBefore = 0.0
+	/// Set by a block that asks for a page break before it, or one that closed asking for one after.
+	private var pendingPageBreak = false
 	/// Every paragraph's format, so indents every paragraph shares can be removed at the end.
 	private var formats: [ParagraphFormat] = []
 	/// The tables being read, innermost last, and the row in progress.
@@ -237,6 +239,9 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		if element.block != nil {
 			pendingSpaceBefore = max(pendingSpaceBefore, verticalSpace(of: elements[elements.count - 1], side: "top"))
+			if typography.styles.bookPageBreaks, css.breaksPageBefore {
+				pendingPageBreak = true
+			}
 		}
 
 		if name == "li" {
@@ -273,6 +278,9 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		let closed = elements[index...]
 		let closesBlock = closed.contains { $0.block != nil }
 		for element in closed.reversed() where element.block != nil {
+			if typography.styles.bookPageBreaks, element.css.breaksPageAfter {
+				pendingPageBreak = true
+			}
 			if let lastFormat {
 				lastFormat.spaceAfter = max(lastFormat.spaceAfter, verticalSpace(of: element, side: "bottom"))
 				if typography.styles.bookBorders, element.paragraphCount > 0, let width = element.css.borderWidth("bottom") {
@@ -606,6 +614,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			}
 		}
 		pendingSpaceBefore = 0
+		format.breaksPageBefore = pendingPageBreak
+		pendingPageBreak = false
 
 		switch style.block {
 		case .heading:
