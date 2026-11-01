@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// The rules from a book's style sheets, applied with the CSS cascade: matching rules in order of specificity,
@@ -18,10 +19,11 @@ nonisolated struct StyleSheet: Sendable {
 
 	init() {}
 
-	init(css: String) {
+	/// Parses a style sheet, keeping the rules in `@media` blocks that match a viewport of this size.
+	init(css: String, viewport: CGSize) {
 		let withoutComments = Self.removingComments(from: css)
 
-		for block in Self.ruleBlocks(in: withoutComments) {
+		for block in Self.ruleBlocks(in: withoutComments, viewport: viewport) {
 			let (normal, important) = CSSStyle.parse(block.declarations)
 			for selectorText in block.selector.split(separator: ",") {
 				guard let (selector, pseudoElement) = CSSSelector.parse(String(selectorText)) else { continue }
@@ -76,9 +78,9 @@ nonisolated struct StyleSheet: Sendable {
 		return style
 	}
 
-	/// The `selector { declarations }` blocks of a style sheet. At-rules like `@media` are entered, so their rules
-	/// apply; `@font-face` and `@page` blocks, which describe fonts and printing, are skipped.
-	private static func ruleBlocks(in css: String) -> [(selector: String, declarations: String)] {
+	/// The `selector { declarations }` blocks of a style sheet. `@media` blocks are entered when their query matches
+	/// and `@supports` blocks always; `@font-face` and `@page` blocks, which describe fonts and printing, are skipped.
+	private static func ruleBlocks(in css: String, viewport: CGSize) -> [(selector: String, declarations: String)] {
 		enum Context {
 			case group
 			case rule(String)
@@ -98,7 +100,11 @@ nonisolated struct StyleSheet: Sendable {
 				if isSkipping || !prelude.hasPrefix("@") {
 					contexts.append(isSkipping ? .skipped : .rule(prelude))
 				} else {
-					contexts.append(prelude.hasPrefix("@media") || prelude.hasPrefix("@supports") ? .group : .skipped)
+					if prelude.hasPrefix("@media") {
+						contexts.append(MediaQuery.matches(String(prelude.dropFirst(6)), viewport: viewport) ? .group : .skipped)
+					} else {
+						contexts.append(prelude.hasPrefix("@supports") ? .group : .skipped)
+					}
 				}
 				buffer = ""
 			case "}":

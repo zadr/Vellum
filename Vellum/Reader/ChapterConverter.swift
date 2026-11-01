@@ -188,7 +188,8 @@ nonisolated final class ChapterConverter {
 			styleText = ""
 			return
 		case "link":
-			if attributes["rel"]?.lowercased().contains("stylesheet") == true, let href = attributes["href"], let url = resolve(href) {
+			if attributes["rel"]?.lowercased().contains("stylesheet") == true, let href = attributes["href"], let url = resolve(href),
+			   attributes["media"].map({ MediaQuery.matches($0, viewport: styleSheets.viewport) }) ?? true {
 				styleSheet.merge(styleSheets.sheet(at: url))
 			}
 			return
@@ -271,7 +272,7 @@ nonisolated final class ChapterConverter {
 
 		if name == "style", let css = styleText {
 			styleSheets.fonts.load(css: css, relativeTo: file)
-			styleSheet.merge(StyleSheet(css: css))
+			styleSheet.merge(StyleSheet(css: css, viewport: styleSheets.viewport))
 			styleText = nil
 			return
 		}

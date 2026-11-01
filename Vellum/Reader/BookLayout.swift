@@ -51,7 +51,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 	static func make(book: ReaderBook, pageSize: CGSize, typography: ReaderTypography, mode: ReaderMode, onlyChapter: Int? = nil) async throws -> BookLayout {
 		let textRect = typography.textRect(in: pageSize, mode: mode)
 		let typesetter = ParagraphTypesetter(width: textRect.width)
-		let styleSheets = StyleSheetCache(bookRoot: book.root)
+		let styleSheets = StyleSheetCache(bookRoot: book.root, viewport: pageSize)
 
 		var pages = [Page]()
 		var chapterStarts = [Int]()
