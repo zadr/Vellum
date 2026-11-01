@@ -10,7 +10,7 @@ nonisolated struct StyleSheet: Sendable {
 	init() {}
 
 	init(css: String) {
-		let withoutComments = css.replacing(/\/\*[\s\S]*?\*\//, with: "")
+		let withoutComments = Self.removingComments(from: css)
 
 		for block in withoutComments.split(separator: "}") {
 			let parts = block.split(separator: "{", maxSplits: 1)
@@ -20,12 +20,13 @@ nonisolated struct StyleSheet: Sendable {
 			for selector in parts[0].split(separator: ",") {
 				var selector = selector.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 				var isFirstLetter = false
-				if let range = selector.firstRange(of: /::?first-letter$/) {
-					selector.removeSubrange(range)
+				for suffix in ["::first-letter", ":first-letter"] where selector.hasSuffix(suffix) {
+					selector.removeLast(suffix.count)
 					isFirstLetter = true
+					break
 				}
 
-				guard selector.wholeMatch(of: /[a-z0-9]*(\.[a-z0-9_-]+)?/) != nil, !selector.isEmpty else { continue }
+				guard Self.isSimpleSelector(selector) else { continue }
 				if isFirstLetter {
 					firstLetterRules[selector, default: CSSStyle()].merge(style)
 				} else {
@@ -33,6 +34,30 @@ nonisolated struct StyleSheet: Sendable {
 				}
 			}
 		}
+	}
+
+	/// Matches `tag`, `.class`, or `tag.class`. Written out by hand: regular expressions here were rebuilt for every
+	/// selector, which made books with a style block in every chapter take seconds to open.
+	private static func isSimpleSelector(_ selector: String) -> Bool {
+		guard !selector.isEmpty else { return false }
+
+		let parts = selector.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+		let isTag = parts[0].allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+		guard parts.count == 2 else { return isTag }
+
+		let isClass = !parts[1].isEmpty && parts[1].allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
+		return isTag && isClass
+	}
+
+	private static func removingComments(from css: String) -> String {
+		var result = ""
+		var rest = css[...]
+		while let start = rest.range(of: "/*") {
+			result += rest[..<start.lowerBound]
+			guard let end = rest[start.upperBound...].range(of: "*/") else { return result }
+			rest = rest[end.upperBound...]
+		}
+		return result + rest
 	}
 
 	mutating func merge(_ other: StyleSheet) {
