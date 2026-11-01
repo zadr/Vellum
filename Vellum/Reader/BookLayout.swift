@@ -265,6 +265,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 				context.setFillColor(textColor)
 				context.textPosition = cellOrigin
 				CTLineDraw(cell.line, context)
+				ImageRun.draw(in: cell.line, at: cellOrigin, context: context)
 				Strikethrough.draw(in: cell.line, at: cellOrigin, context: context)
 			}
 

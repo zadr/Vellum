@@ -203,7 +203,13 @@ nonisolated final class ChapterConverter {
 			return
 		case "img", "image":
 			if let source = attributes["src"] ?? attributes["href"] ?? attributes["xlink:href"] {
-				appendImage(source)
+				var css = styleSheet.style(for: node)
+				if let inline = attributes["style"] {
+					css.merge(CSSStyle(declarations: inline))
+				}
+				if !css.isHidden {
+					appendImage(source, css: css, attributes: attributes)
+				}
 			}
 			return
 		default:
@@ -705,7 +711,7 @@ nonisolated final class ChapterConverter {
 
 		var alignment = style.alignment
 		if style.block == .image {
-			alignment = .center
+			// Placed by the alignment around it, like any block.
 		} else if alignment == .natural || alignment == .justified, style.block != .preformatted, !isHeading(style.block) {
 			switch styles.justification {
 			case .book: break
@@ -986,29 +992,52 @@ nonisolated final class ChapterConverter {
 		format = nil
 	}
 
-	private func appendImage(_ source: String) {
+	/// An image, sized as CSS sizes it: its `width` and `height` (from styles or attributes), else its own size in
+	/// CSS pixels, limited by `max-width` and `max-height`. Like any inline element it sits in the line, unless the
+	/// book makes it a block, which then takes its own line and is placed by the alignment of the text around it.
+	private func appendImage(_ source: String, css: CSSStyle, attributes: [String: String]) {
 		guard
 			let url = resolve(source),
 			let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
 			let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
 		else { return }
 
-		// Book images are sized in CSS pixels, which match points. Shrink them to fit the page, never enlarge.
 		let natural = CGSize(width: image.width, height: image.height)
-		let maximum = CGSize(width: textArea.width, height: textArea.height * 0.95)
-		let scale = min(1, maximum.width / natural.width, maximum.height / natural.height)
-		let size = CGSize(width: (natural.width * scale).rounded(.down), height: (natural.height * scale).rounded(.down))
+		let fontSize = typography.size * currentStyle().fontScale
+		// Percentages are of the column; heights use the page, as a book's 100% height means a full page.
+		func length(_ property: String, of reference: Double) -> Double? {
+			guard let value = css.length(property) ?? attributes[property].flatMap({ CSSLength($0) ?? Double($0).map { CSSLength("\($0)px")! } }) else { return nil }
+			let points = value.unit == .percent ? value.value / 100 * reference : value.points(fontSize: fontSize, width: reference)
+			return points > 0 ? points : nil
+		}
+
+		var width = length("width", of: textArea.width)
+		var height = length("height", of: textArea.height)
+		switch (width, height) {
+		case (nil, nil): width = natural.width; height = natural.height
+		case (let w?, nil): height = w * natural.height / natural.width
+		case (nil, let h?): width = h * natural.width / natural.height
+		default: break
+		}
+
+		var size = CGSize(width: width ?? natural.width, height: height ?? natural.height)
+		let maxWidth = length("max-width", of: textArea.width), maxHeight = length("max-height", of: textArea.height)
+		// A page can't scroll, so an image taller or wider than the page would be cut off; those alone shrink to fit.
+		let page = min(textArea.width / size.width, textArea.height / size.height)
+		let limit = min(maxWidth.map { $0 / size.width } ?? 1, maxHeight.map { $0 / size.height } ?? 1, page, 1)
+		size = CGSize(width: (size.width * limit).rounded(.down), height: (size.height * limit).rounded(.down))
 		guard size.width >= 1, size.height >= 1 else { return }
 
 		let run = ImageRun(image: image, size: size)
 		guard let delegate = run.makeRunDelegate() else { return }
 
-		// Small images, like ornaments, stay in the line. Anything larger gets its own centered paragraph.
-		let isInline = size.height < typography.size * 2.5
+		let display = css.properties["display"]?.lowercased()
+		let isBlock = display == "block" || display == "table" || display == "flex"
 		var style = currentStyle()
-		if !isInline {
+		if isBlock {
 			finishParagraph()
 			style.block = .image
+			style.alignment = css.properties["margin-left"]?.lowercased() == "auto" && css.properties["margin-right"]?.lowercased() == "auto" ? .center : style.alignment
 		}
 
 		var imageAttributes = paragraphAttributes(for: style)
@@ -1016,11 +1045,12 @@ nonisolated final class ChapterConverter {
 		imageAttributes[Self.imageAttribute] = run
 		output.append(NSAttributedString(string: Self.objectReplacement, attributes: imageAttributes))
 
-		if !isInline {
+		if isBlock {
 			output.append(NSAttributedString(string: "\n", attributes: paragraphAttributes(for: style)))
 			format = nil
 		}
 	}
+
 
 	/// For chapters that aren't well-formed XML: drop the markup and keep each paragraph's words.
 	private func appendPlainText(from markup: String) {
