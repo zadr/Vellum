@@ -30,6 +30,8 @@ struct ReaderAppearanceSheet: View {
 						}
 					}
 					.scrollIndicators(.hidden)
+
+					Toggle("Book Colors", isOn: $styles.bookColors)
 				}
 
 				Section {

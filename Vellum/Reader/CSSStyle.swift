@@ -1,3 +1,4 @@
+import CoreGraphics
 import CoreText
 import Foundation
 
@@ -236,6 +237,35 @@ nonisolated struct CSSStyle: Sendable {
 	/// Whether the element should stay on the same page as whatever follows it, as headings do.
 	var avoidsBreakAfter: Bool {
 		(value("page-break-after") ?? value("break-after")) == "avoid"
+	}
+
+	/// The text color, if the book sets one.
+	var color: CGColor? {
+		(value("-webkit-text-fill-color") ?? value("color")).flatMap(CSSColor.parse)
+	}
+
+	/// The background color, from `background-color` or the color in a `background` shorthand.
+	var backgroundColor: CGColor? {
+		if let value = value("background-color") {
+			return CSSColor.parse(value)
+		}
+		guard let shorthand = value("background") else { return nil }
+		// The shorthand mixes colors with images and positions; take the first part that reads as a color.
+		var parts = [String]()
+		var current = ""
+		var depth = 0
+		for character in shorthand {
+			if character == "(" { depth += 1 }
+			if character == ")" { depth -= 1 }
+			if character == " ", depth == 0 {
+				parts.append(current)
+				current = ""
+			} else {
+				current.append(character)
+			}
+		}
+		parts.append(current)
+		return parts.lazy.compactMap(CSSColor.parse).first
 	}
 
 	var isHidden: Bool {

@@ -42,6 +42,8 @@ nonisolated struct ReaderStyleSettings: Equatable, Sendable {
 	var bookTables = true
 	/// Start a new page where the book asks, and keep lines together as it asks.
 	var bookPageBreaks = true
+	/// Use the book's text and background colors. Off draws everything in the theme's colors.
+	var bookColors = true
 
 	init() {}
 
@@ -50,7 +52,7 @@ nonisolated struct ReaderStyleSettings: Equatable, Sendable {
 		("bookLineHeight", \.bookLineHeight), ("bookParagraphSpacing", \.bookParagraphSpacing),
 		("bookTextSizes", \.bookTextSizes), ("bookDropCaps", \.bookDropCaps), ("bookIndents", \.bookIndents),
 		("bookMargins", \.bookMargins), ("bookTextEffects", \.bookTextEffects), ("bookFonts", \.bookFonts),
-		("bookBorders", \.bookBorders), ("bookTables", \.bookTables), ("bookPageBreaks", \.bookPageBreaks),
+		("bookBorders", \.bookBorders), ("bookTables", \.bookTables), ("bookPageBreaks", \.bookPageBreaks), ("bookColors", \.bookColors),
 	] }
 }
 

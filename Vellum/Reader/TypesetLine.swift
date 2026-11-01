@@ -32,6 +32,10 @@ nonisolated struct TypesetLine: @unchecked Sendable {
 	var borderLeft = 0.0
 	var paragraphIndent = 0.0
 	var paragraphWidth = 0.0
+	/// Filled behind the line's paragraph area. `fillsSpaceAbove` carries it up through the gap above, joining
+	/// paragraphs that share a background into one block.
+	var backgroundColor: CGColor?
+	var fillsSpaceAbove = false
 	/// For a table row: each cell's lines, with their position from the line's left and top. `line` is then empty.
 	var cells: [(line: CTLine, x: Double, baseline: Double)] = []
 
@@ -66,6 +70,8 @@ nonisolated extension TypesetLine {
 		line.paragraphIndent = paragraphIndent
 		line.paragraphWidth = paragraphWidth
 		line.cells = cells
+		line.backgroundColor = backgroundColor
+		line.fillsSpaceAbove = fillsSpaceAbove
 		line.breaksPageBefore = breaksPageBefore
 		line.keepWithFollowing = keepWithFollowing
 		return line

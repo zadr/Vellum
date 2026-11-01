@@ -254,34 +254,48 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		context.textMatrix = .identity
 		context.setFillColor(textColor)
 
-		for (line, boxTop) in zip(lines[page.firstLine...], page.lineTops) {
-			drawBorders(of: line, boxTop: boxTop, pageHeight: page.height, context: context)
+		for (offset, (line, boxTop)) in zip(lines[page.firstLine...], page.lineTops).enumerated() {
+			drawBorders(of: line, boxTop: boxTop, isFirstOnPage: offset == 0, pageHeight: page.height, context: context)
 
 			let top = boxTop + line.spaceAboveText
 			for cell in line.cells {
 				let cellOrigin = CGPoint(x: textRect.minX + line.x + cell.x, y: page.height - (top + cell.baseline))
+				Highlight.draw(in: cell.line, at: cellOrigin, context: context)
+				// Core Text leaves the fill set to the last colored run, which uncolored text would then take.
+				context.setFillColor(textColor)
 				context.textPosition = cellOrigin
 				CTLineDraw(cell.line, context)
 				Strikethrough.draw(in: cell.line, at: cellOrigin, context: context)
 			}
 
 			let origin = CGPoint(x: textRect.minX + line.x, y: page.height - (top + line.height - line.descent))
+			Highlight.draw(in: line.line, at: origin, context: context)
+			context.setFillColor(textColor)
 			context.textPosition = origin
 			CTLineDraw(line.line, context)
 			ImageRun.draw(in: line.line, at: origin, context: context)
 			Strikethrough.draw(in: line.line, at: origin, context: context)
 
 			if let dropCap = line.dropCap {
+				context.setFillColor(textColor)
 				context.textPosition = CGPoint(x: textRect.minX + dropCap.x, y: page.height - (top + dropCap.baseline))
 				CTLineDraw(dropCap.line, context)
 			}
 		}
 	}
 
-	/// Draws a line's rules, in the flipped, bottom-left-origin coordinates `draw` sets up.
-	private func drawBorders(of line: TypesetLine, boxTop: Double, pageHeight: Double, context: CGContext) {
+	/// Draws a line's background and rules, in the flipped, bottom-left-origin coordinates `draw` sets up.
+	private func drawBorders(of line: TypesetLine, boxTop: Double, isFirstOnPage: Bool, pageHeight: Double, context: CGContext) {
 		let left = textRect.minX + line.paragraphIndent
 		let width = line.paragraphWidth
+
+		if let background = line.backgroundColor {
+			let gap = line.fillsSpaceAbove && !isFirstOnPage ? line.spaceBefore : 0
+			context.saveGState()
+			context.setFillColor(background)
+			context.fill(CGRect(x: left, y: pageHeight - boxTop - line.totalHeight, width: width, height: line.totalHeight + gap))
+			context.restoreGState()
+		}
 
 		if line.borderTop > 0 {
 			context.fill(CGRect(x: left, y: pageHeight - boxTop - line.borderTop, width: width, height: line.borderTop))

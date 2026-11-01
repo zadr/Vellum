@@ -32,6 +32,7 @@ nonisolated struct ParagraphTypesetter {
 		let string = text.string as NSString
 		var lines = [TypesetLine]()
 		var previousSpaceAfter = 0.0
+		var previousBackground: CGColor?
 		var start = 0
 
 		while start < string.length {
@@ -42,8 +43,17 @@ nonisolated struct ParagraphTypesetter {
 				let format = text.attribute(ChapterConverter.formatAttribute, at: start, effectiveRange: nil) as? ParagraphFormat ?? ParagraphFormat()
 				let range = NSRange(location: start, length: end - start)
 				// Like CSS margins, the space between paragraphs is the larger of the two, not their sum.
-				lines += setParagraph(text.attributedSubstring(from: range), style: format, offset: start, spaceBefore: max(previousSpaceAfter, format.spaceBefore))
+				var paragraphLines = setParagraph(text.attributedSubstring(from: range), style: format, offset: start, spaceBefore: max(previousSpaceAfter, format.spaceBefore))
+				if let background = format.backgroundColor {
+					for index in paragraphLines.indices {
+						paragraphLines[index].backgroundColor = background
+						// Lines within a paragraph always join; the first joins the paragraph above if it shares the block.
+						paragraphLines[index].fillsSpaceAbove = index > 0 || previousBackground === background
+					}
+				}
+				lines += paragraphLines
 				previousSpaceAfter = format.spaceAfter
+				previousBackground = format.backgroundColor
 			}
 
 			start = end + 1

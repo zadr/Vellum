@@ -1,3 +1,4 @@
+import CoreGraphics
 import CoreText
 
 /// How a paragraph is set: its alignment, indents, and spacing. Attached to the paragraph's text by the
@@ -24,6 +25,8 @@ nonisolated final class ParagraphFormat: @unchecked Sendable {
 	var widows = 2
 	/// Keep the paragraph on the same page as the start of the next one.
 	var keepWithNext = false
+	/// Filled behind the paragraph, from the background color of the block it's in.
+	var backgroundColor: CGColor?
 	/// For a table row: the table, whose columns the row's tab-separated cells line up in.
 	var table: TableColumns?
 

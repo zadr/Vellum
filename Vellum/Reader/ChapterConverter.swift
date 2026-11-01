@@ -54,6 +54,8 @@ nonisolated final class ChapterConverter {
 		/// The style of content the book adds after the element, generated when it closes.
 		var after: CSSStyle?
 		var link: URL?
+		var color: CGColor?
+		var backgroundColor: CGColor?
 	}
 
 	/// The style that applies to text at the current point, after inheriting from every open element.
@@ -75,10 +77,15 @@ nonisolated final class ChapterConverter {
 		var isUnderlined = false
 		var isStruckThrough = false
 		var link: URL?
+		var color: CGColor?
+		/// From inline elements only; a block's background is drawn behind its paragraphs instead.
+		var highlight: CGColor?
 	}
 
 	/// Marks text to strike through. Core Text has no attribute for it, so the page draws the line.
 	static let strikethroughAttribute = NSAttributedString.Key("VellumStrikethrough")
+	/// A color filled behind a run of text, from an inline element's background. The page draws it.
+	static let highlightAttribute = NSAttributedString.Key("VellumHighlight")
 
 	private static let blockNames: Set<String> = [
 		"p", "div", "section", "article", "header", "footer", "aside", "nav", "main", "figure", "figcaption",
@@ -467,6 +474,10 @@ nonisolated final class ChapterConverter {
 		}
 		element.link = pendingLink
 		pendingLink = nil
+		if typography.styles.bookColors {
+			element.color = css.color
+			element.backgroundColor = css.backgroundColor.flatMap { $0.alpha > 0 ? $0 : nil }
+		}
 		if name == "pre" || name == "code" || name == "kbd" || name == "samp" || name == "tt" {
 			element.fontFamily = element.fontFamily ?? "monospace"
 		}
@@ -496,6 +507,10 @@ nonisolated final class ChapterConverter {
 			style.isUnderlined = style.isUnderlined || element.isUnderlined == true
 			style.isStruckThrough = style.isStruckThrough || element.isStruckThrough == true
 			style.link = element.link ?? style.link
+			style.color = element.color ?? style.color
+			if element.block == nil, let background = element.backgroundColor {
+				style.highlight = background
+			}
 		}
 
 		style.fontScale = min(max(style.fontScale, 0.6), 2.5)
@@ -509,15 +524,13 @@ nonisolated final class ChapterConverter {
 			style.fontScale = 1
 		}
 
-		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)-\(style.fontFamily ?? "")-\(style.isUnderlined)-\(style.isStruckThrough)-\(style.link?.absoluteString ?? "")"
+		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)-\(style.fontFamily ?? "")-\(style.isUnderlined)-\(style.isStruckThrough)-\(style.link?.absoluteString ?? "")-\(Self.colorKey(style.color))-\(Self.colorKey(style.highlight))"
 		if let attributes = attributeCache[key] {
 			return attributes
 		}
 
 		var attributes: [NSAttributedString.Key: Any] = [
 			NSAttributedString.Key(kCTFontAttributeName as String): font(for: style),
-			// Text takes its color from the page, so changing themes doesn't need a new layout.
-			NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
 			// Standard ligatures, like fi and fl, wherever the font has them.
 			NSAttributedString.Key(kCTLigatureAttributeName as String): 1,
 		]
@@ -536,6 +549,17 @@ nonisolated final class ChapterConverter {
 
 		if let link = style.link {
 			attributes[Self.linkAttribute] = link
+		}
+
+		if let color = style.color {
+			attributes[NSAttributedString.Key(kCTForegroundColorAttributeName as String)] = color
+		} else {
+			// Text without a color of its own takes the theme's, so changing themes doesn't need a new layout.
+			attributes[NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String)] = true
+		}
+
+		if let highlight = style.highlight {
+			attributes[Self.highlightAttribute] = highlight
 		}
 
 		if style.letterSpacing != 0 {
@@ -595,6 +619,10 @@ nonisolated final class ChapterConverter {
 			}
 		}
 		return nil
+	}
+
+	private static func colorKey(_ color: CGColor?) -> String {
+		color?.components?.map { "\($0)" }.joined(separator: ",") ?? ""
 	}
 
 	/// The format for a paragraph starting now, from its block's defaults and the styles of the elements it's in.
@@ -662,6 +690,11 @@ nonisolated final class ChapterConverter {
 
 		if styles.bookBorders {
 			applyBorders(to: format)
+		}
+
+		if styles.bookColors {
+			// The innermost block with a background fills behind the paragraph.
+			format.backgroundColor = elements.last { $0.block != nil && $0.backgroundColor != nil }?.backgroundColor
 		}
 
 		if styles.bookMargins {
