@@ -2,13 +2,16 @@ import CoreGraphics
 import CoreText
 import Foundation
 
-/// A whole book broken into pages for one page size and typography. Each chapter starts on a new page.
+/// A whole book broken into pages for one page size, typography, and reading mode.
+/// In scroll mode the "pages" are screen-sized pieces of text that stack seamlessly, each trimmed to the lines it holds.
 nonisolated final class BookLayout: @unchecked Sendable {
 	struct Page: Sendable {
 		let chapter: Int
 		/// The page's text, as a range in its chapter's text.
 		let location: Int
 		let length: Int
+		/// How tall the page is drawn. Every page is a screen tall, except pieces in scroll mode.
+		let height: Double
 	}
 
 	private struct Chapter {
@@ -17,6 +20,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		let anchors: [String: Int]
 	}
 
+	let mode: ReaderMode
 	let pageSize: CGSize
 	let pages: [Page]
 	/// The index of each chapter's first page.
@@ -25,7 +29,8 @@ nonisolated final class BookLayout: @unchecked Sendable {
 	private let textRect: CGRect
 	private let chapters: [Chapter]
 
-	private init(pageSize: CGSize, textRect: CGRect, pages: [Page], chapterStarts: [Int], chapters: [Chapter]) {
+	private init(mode: ReaderMode, pageSize: CGSize, textRect: CGRect, pages: [Page], chapterStarts: [Int], chapters: [Chapter]) {
+		self.mode = mode
 		self.pageSize = pageSize
 		self.textRect = textRect
 		self.pages = pages
@@ -35,8 +40,8 @@ nonisolated final class BookLayout: @unchecked Sendable {
 
 	/// Converts and paginates every chapter. Runs off the main actor; checks for cancellation between chapters.
 	@concurrent
-	static func make(book: ReaderBook, pageSize: CGSize, typography: ReaderTypography) async throws -> BookLayout {
-		let textRect = typography.textRect(in: pageSize)
+	static func make(book: ReaderBook, pageSize: CGSize, typography: ReaderTypography, mode: ReaderMode) async throws -> BookLayout {
+		let textRect = typography.textRect(in: pageSize, mode: mode)
 		let path = CGPath(rect: textRect, transform: nil)
 		let styleSheets = StyleSheetCache()
 
@@ -61,14 +66,30 @@ nonisolated final class BookLayout: @unchecked Sendable {
 					length = min(1, output.text.length - location)
 				}
 
-				pages.append(Page(chapter: index, location: location, length: length))
+				let height = mode == .pages ? pageSize.height : usedHeight(of: frame, in: textRect)
+				pages.append(Page(chapter: index, location: location, length: length, height: height))
 				location += length
 			} while location < output.text.length
 
 			chapters.append(Chapter(text: output.text, framesetter: framesetter, anchors: output.anchors))
 		}
 
-		return BookLayout(pageSize: pageSize, textRect: textRect, pages: pages, chapterStarts: chapterStarts, chapters: chapters)
+		return BookLayout(mode: mode, pageSize: pageSize, textRect: textRect, pages: pages, chapterStarts: chapterStarts, chapters: chapters)
+	}
+
+	/// How much of a frame, from its top, its lines actually fill.
+	private static func usedHeight(of frame: CTFrame, in rect: CGRect) -> Double {
+		let lines = CTFrameGetLines(frame) as? [CTLine] ?? []
+		guard let last = lines.last else { return 1 }
+
+		var origins = [CGPoint](repeating: .zero, count: lines.count)
+		CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+
+		var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+		CTLineGetTypographicBounds(last, &ascent, &descent, &leading)
+
+		let bottom = (origins.last?.y ?? 0) - descent
+		return max((rect.height - bottom).rounded(.up), 1)
 	}
 
 	// MARK: Finding pages
@@ -76,6 +97,10 @@ nonisolated final class BookLayout: @unchecked Sendable {
 	func pageCount(inChapter chapter: Int) -> Int {
 		let end = chapter + 1 < chapterStarts.count ? chapterStarts[chapter + 1] : pages.count
 		return end - chapterStarts[chapter]
+	}
+
+	func isChapterStart(_ index: Int) -> Bool {
+		chapterStarts.contains(index)
 	}
 
 	func pageIndex(for position: ReadingPosition) -> Int {
@@ -114,7 +139,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 
 	// MARK: Drawing
 
-	/// Draws a page into a context whose origin is at the top left, as SwiftUI's are.
+	/// Draws a page into a context the page's size, with the origin at the top left as SwiftUI's are.
 	func draw(page index: Int, in context: CGContext, textColor: CGColor) {
 		let page = pages[index]
 		let chapter = chapters[page.chapter]
@@ -125,17 +150,22 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		defer { context.restoreGState() }
 
 		// Core Text draws with the origin at the bottom left.
-		context.translateBy(x: 0, y: pageSize.height)
+		context.translateBy(x: 0, y: page.height)
 		context.scaleBy(x: 1, y: -1)
 		context.textMatrix = .identity
 		context.setFillColor(textColor)
+
+		// A scroll piece is trimmed to its lines, so line its top up with the top of the frame.
+		if mode == .scroll {
+			context.translateBy(x: 0, y: page.height - textRect.maxY)
+		}
 
 		let lines = CTFrameGetLines(frame) as? [CTLine] ?? []
 		var origins = [CGPoint](repeating: .zero, count: lines.count)
 		CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
 
 		// A page holding only an image, like a cover or a map, looks best centered.
-		if lines.count == 1, let image = images(in: lines[0]).first {
+		if mode == .pages, lines.count == 1, let image = images(in: lines[0]).first {
 			context.translateBy(x: 0, y: -(textRect.height - image.run.size.height) / 2)
 		}
 

@@ -1,0 +1,135 @@
+import SwiftUI
+
+/// Theme, layout, and typography for the reader. Stays open at half height so changes show on the page behind it.
+struct ReaderAppearanceSheet: View {
+	@Environment(\.dismiss) private var dismiss
+
+	@AppStorage("reader-theme") private var theme = ReaderTheme.automatic
+	@AppStorage("reader-mode") private var mode = ReaderMode.pages
+	@AppStorage("reader-font") private var font = ReaderFont.charter
+	@AppStorage("reader-text-scale") private var textScale = ReaderTypography.defaultTextScale
+	@AppStorage("reader-line-height") private var lineHeight = ReaderTypography.defaultLineHeight
+	@AppStorage("reader-paragraph-spacing") private var paragraphSpacing = ReaderTypography.defaultParagraphSpacing
+	@AppStorage("reader-column-width") private var columnWidth = ReaderTypography.defaultColumnWidth
+
+	/// The widest column the current screen can hold.
+	let maximumColumnWidth: Double
+
+	var body: some View {
+		NavigationStack {
+			Form {
+				Section {
+					ScrollView(.horizontal) {
+						HStack(spacing: Design.gridSpacing) {
+							ForEach(ReaderTheme.allCases) { option in
+								ReaderThemeSwatch(theme: option, isSelected: option == theme) {
+									theme = option
+								}
+							}
+						}
+					}
+					.scrollIndicators(.hidden)
+				}
+
+				Section {
+					Picker("Layout", selection: $mode) {
+						ForEach(ReaderMode.allCases) { mode in
+							Label(mode.label, systemImage: mode.systemImage)
+								.tag(mode)
+						}
+					}
+					.pickerStyle(.segmented)
+				}
+
+				Section("Text") {
+					Picker("Font", selection: $font) {
+						ForEach(ReaderFont.allCases) { font in
+							Text(font.label)
+								.tag(font)
+						}
+					}
+
+					ReaderSettingSlider(
+						title: "Size",
+						value: $textScale,
+						range: ReaderTypography.textScales,
+						step: 0.05,
+						smallerImage: "textformat.size.smaller",
+						largerImage: "textformat.size.larger",
+						valueText: Self.percent
+					)
+
+					ReaderSettingSlider(
+						title: "Line Height",
+						value: $lineHeight,
+						range: ReaderTypography.lineHeights,
+						step: 0.05,
+						smallerImage: "arrow.down.and.line.horizontal.and.arrow.up",
+						largerImage: "arrow.up.and.line.horizontal.and.arrow.down",
+						valueText: Self.multiple
+					)
+
+					ReaderSettingSlider(
+						title: "Paragraph Spacing",
+						value: $paragraphSpacing,
+						range: ReaderTypography.paragraphSpacings,
+						step: 0.1,
+						smallerImage: "text.alignleft",
+						largerImage: "text.justify.leading",
+						valueText: Self.multiple
+					)
+				}
+
+				Section("Page") {
+					ReaderSettingSlider(
+						title: "Column Width",
+						value: $columnWidth,
+						range: ReaderTypography.minimumColumnWidth...max(maximumColumnWidth, ReaderTypography.minimumColumnWidth + 10),
+						step: 10,
+						smallerImage: "arrow.right.and.line.vertical.and.arrow.left",
+						largerImage: "arrow.left.and.line.vertical.and.arrow.right",
+						valueText: Self.points
+					)
+				}
+
+				Section {
+					Button("Reset to Defaults", action: reset)
+				}
+			}
+			.navigationTitle("Appearance")
+			.navigationBarTitleDisplayMode(.inline)
+			.toolbar {
+				ToolbarItem(placement: .confirmationAction) {
+					Button(role: .close, action: close)
+				}
+			}
+		}
+		.presentationDetents([.medium, .large])
+		.presentationBackgroundInteraction(.enabled(upThrough: .medium))
+	}
+
+	private static func percent(_ value: Double) -> String {
+		value.formatted(.percent.precision(.fractionLength(0)))
+	}
+
+	private static func multiple(_ value: Double) -> String {
+		"\(value.formatted(.number.precision(.fractionLength(0...2))))×"
+	}
+
+	private static func points(_ value: Double) -> String {
+		"\(value.formatted(.number.precision(.fractionLength(0)))) pt"
+	}
+
+	private func reset() {
+		mode = .pages
+		font = .charter
+		textScale = ReaderTypography.defaultTextScale
+		lineHeight = ReaderTypography.defaultLineHeight
+		paragraphSpacing = ReaderTypography.defaultParagraphSpacing
+		columnWidth = ReaderTypography.defaultColumnWidth
+	}
+
+	private func close() {
+		dismiss()
+	}
+}

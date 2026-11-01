@@ -4,4 +4,5 @@ import CoreGraphics
 struct ReaderLayoutRequest: Equatable {
 	var pageSize: CGSize
 	var typography: ReaderTypography
+	var mode: ReaderMode
 }

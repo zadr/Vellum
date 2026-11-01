@@ -45,6 +45,11 @@ final class ReaderModel {
 		return layout.pageCount(inChapter: chapter)
 	}
 
+	/// How far through the current chapter the reader is, from 0 to 1.
+	var fractionOfChapterRead: Double {
+		Double(pageInChapter) / Double(pagesInChapter)
+	}
+
 	var fractionRead: Double {
 		guard let layout, !layout.pages.isEmpty else { return 0 }
 		return Double(currentPage + 1) / Double(layout.pages.count)
@@ -72,8 +77,8 @@ final class ReaderModel {
 
 	// MARK: Layout
 
-	/// Breaks the book into pages for a page size and typography, keeping the reader's place.
-	func layOut(pageSize: CGSize, typography: ReaderTypography) async {
+	/// Breaks the book into pages for a page size, typography, and mode, keeping the reader's place.
+	func layOut(pageSize: CGSize, typography: ReaderTypography, mode: ReaderMode) async {
 		guard pageSize.width > 0, pageSize.height > 0 else { return }
 
 		layoutGeneration += 1
@@ -81,7 +86,7 @@ final class ReaderModel {
 		isLayingOut = true
 
 		do {
-			let newLayout = try await BookLayout.make(book: book, pageSize: pageSize, typography: typography)
+			let newLayout = try await BookLayout.make(book: book, pageSize: pageSize, typography: typography, mode: mode)
 			layout = newLayout
 			visiblePage = newLayout.pageIndex(for: position)
 			layoutError = nil

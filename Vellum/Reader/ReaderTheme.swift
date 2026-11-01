@@ -27,6 +27,11 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
 		}
 	}
 
+	/// For places with little room, like under a theme swatch.
+	var shortLabel: String {
+		self == .automatic ? "Auto" : label
+	}
+
 	func palette(for colorScheme: ColorScheme) -> ReaderPalette {
 		switch self {
 		case .automatic: colorScheme == .dark ? .dark : .light

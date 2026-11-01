@@ -320,14 +320,16 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		}
 
 		let size = typography.size
+		let spacing = size * typography.paragraphSpacing
+		let lineHeight = typography.lineHeight
 		var alignment = style.alignment
 		var values: [CGFloat] = switch style.block {
 		// First-line indent, head indent, space before, space after, line height multiple.
-		case .paragraph, .preformatted: [0, 0, 0, size * 0.6, 1.2]
-		case .heading: [0, 0, size * 1.2, size * 0.7, 1.1]
-		case .quote: [size * 1.5, size * 1.5, 0, size * 0.6, 1.2]
-		case .listItem: [size * 0.5, size * 1.5, 0, size * 0.3, 1.2]
-		case .image: [0, 0, size * 0.3, size * 0.6, 1]
+		case .paragraph, .preformatted: [0, 0, 0, spacing, lineHeight]
+		case .heading: [0, 0, size * 1.2, max(spacing, size * 0.5), max(lineHeight * 0.9, 1)]
+		case .quote: [size * 1.5, size * 1.5, 0, spacing, lineHeight]
+		case .listItem: [size * 0.5, size * 1.5, 0, spacing / 2, lineHeight]
+		case .image: [0, 0, size * 0.3, max(spacing, size * 0.3), 1]
 		}
 
 		if style.block == .image {

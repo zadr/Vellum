@@ -21,6 +21,12 @@ enum Design {
 	static let continueReadingCoverWidth = 120.0
 	static let gridSpacing = 20.0
 
+	/// Theme swatches are at least as big as the smallest comfortable tap target.
+	static let themeSwatchSize = 44.0
+
+	/// The gap between chapters when scrolling through a book.
+	static let readerChapterGap = 64.0
+
 	/// How far each level of a book's table of contents is indented.
 	static let contentsIndent = 16.0
 }
