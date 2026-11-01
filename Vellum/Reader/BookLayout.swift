@@ -221,6 +221,13 @@ nonisolated final class BookLayout: @unchecked Sendable {
 			drawBorders(of: line, boxTop: boxTop, pageHeight: page.height, context: context)
 
 			let top = boxTop + line.spaceAboveText
+			for cell in line.cells {
+				let cellOrigin = CGPoint(x: textRect.minX + line.x + cell.x, y: page.height - (top + cell.baseline))
+				context.textPosition = cellOrigin
+				CTLineDraw(cell.line, context)
+				Strikethrough.draw(in: cell.line, at: cellOrigin, context: context)
+			}
+
 			let origin = CGPoint(x: textRect.minX + line.x, y: page.height - (top + line.height - line.descent))
 			context.textPosition = origin
 			CTLineDraw(line.line, context)

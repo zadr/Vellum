@@ -55,6 +55,10 @@ nonisolated struct ParagraphTypesetter {
 	// MARK: Paragraphs
 
 	private func setParagraph(_ paragraph: NSAttributedString, style: ParagraphFormat, offset paragraphOffset: Int, spaceBefore: Double) -> [TypesetLine] {
+		if let table = style.table {
+			return [tableRow(paragraph, table: table, style: style, offset: paragraphOffset, spaceBefore: spaceBefore)]
+		}
+
 		// A drop cap is taken out of the text and drawn beside the first lines, which are shortened to make room.
 		let dropCap = Self.dropCap(in: paragraph, lineHeight: style.lineHeight)
 		let capLength = dropCap?.length ?? 0
@@ -123,6 +127,57 @@ nonisolated struct ParagraphTypesetter {
 			lines[0] = lines[0].including(paragraphOffset..<(lines[0].location + lines[0].length))
 		}
 		return lines
+	}
+
+	/// A table row set as one tall line: each cell is broken into lines within its column, and the row is as tall
+	/// as its tallest cell.
+	private func tableRow(_ row: NSAttributedString, table: TableColumns, style: ParagraphFormat, offset: Int, spaceBefore: Double) -> TypesetLine {
+		let available = width - style.indent - style.rightIndent
+		let columns = table.columns(width: available, gap: 12)
+		let string = row.string as NSString
+
+		var cellRanges = [NSRange]()
+		var start = 0
+		for index in 0...string.length where index == string.length || string.character(at: index) == 0x09 {
+			cellRanges.append(NSRange(location: start, length: index - start))
+			start = index + 1
+		}
+
+		var pieces = [(line: CTLine, x: Double, baseline: Double)]()
+		var rowHeight = 0.0
+		var lastDescent = 0.0
+		for (index, range) in cellRanges.enumerated() where index < columns.count && range.length > 0 {
+			let cell = row.attributedSubstring(from: range)
+			let typesetter = CTTypesetterCreateWithAttributedString(cell)
+			var y = 0.0
+			var location = 0
+			let cellString = cell.string as NSString
+			while location < cell.length {
+				var count = max(CTTypesetterSuggestLineBreak(typesetter, location, columns[index].width), 1)
+				// Line breaks within the cell end the line there, and aren't drawn.
+				let lineBreak = cellString.range(of: "\u{2028}", range: NSRange(location: location, length: count))
+				var drawn = count
+				if lineBreak.location != NSNotFound {
+					count = lineBreak.location - location + 1
+					drawn = count - 1
+				}
+				let line = CTTypesetterCreateLine(typesetter, CFRange(location: location, length: drawn))
+				var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+				CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+				let lineHeight = ((ascent + descent) * style.lineHeight).rounded()
+				pieces.append((line, columns[index].x, y + lineHeight - descent))
+				y += lineHeight
+				lastDescent = descent
+				location += count
+			}
+			rowHeight = max(rowHeight, y)
+		}
+
+		var typeset = TypesetLine(location: offset, length: row.length, line: CTLineCreateWithAttributedString(NSAttributedString()), x: style.indent, height: max(rowHeight, 1), descent: lastDescent, spaceBefore: spaceBefore)
+		typeset.paragraphIndent = style.indent
+		typeset.paragraphWidth = available
+		typeset.cells = pieces
+		return typeset
 	}
 
 	/// A paragraph's drop cap, set at the size that makes its capital as tall as the lines it spans.

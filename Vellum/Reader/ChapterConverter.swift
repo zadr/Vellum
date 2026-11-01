@@ -84,6 +84,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	private static let space: unichar = 0x20
 	private static let newline: unichar = 0x0A
 	private static let lineSeparatorCharacter: unichar = 0x2028
+	private static let tabCharacter: unichar = 0x09
 
 	private let file: URL
 	private let typography: ReaderTypography
@@ -109,6 +110,11 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	private var pendingSpaceBefore = 0.0
 	/// Every paragraph's format, so indents every paragraph shares can be removed at the end.
 	private var formats: [ParagraphFormat] = []
+	/// The tables being read, innermost last, and the row in progress.
+	private var tables: [TableColumns] = []
+	private var rowCellLengths: [Int]?
+	private var cellStart = 0
+	private static let tab = "\t"
 
 	private init(file: URL, typography: ReaderTypography, textArea: CGSize, styleSheets: StyleSheetCache) {
 		self.file = file
@@ -172,7 +178,9 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			}
 			return
 		case "br":
-			appendText(Self.lineSeparator, collapsingWhitespace: false)
+			if !isInTableCell || output.length > cellStart {
+				appendText(Self.lineSeparator, collapsingWhitespace: false)
+			}
 			return
 		case "hr":
 			appendRule()
@@ -201,10 +209,15 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			anchors[id] = output.length
 		}
 
+		if typography.styles.bookTables, startTableElement(name) {
+			elements.append(makeElement(name: name, css: css))
+			return
+		}
+
 		let element = makeElement(name: name, css: css)
 		if element.block != nil {
 			finishParagraph()
-			if typography.styles.bookDropCaps, let lines = styleSheet.firstLetterStyle(forTag: name, classes: classes).dropCapLines {
+			if !isInTableCell, typography.styles.bookDropCaps, let lines = styleSheet.firstLetterStyle(forTag: name, classes: classes).dropCapLines {
 				pendingDropCapLines = lines
 			}
 		}
@@ -237,6 +250,11 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		// Tolerate slightly mismatched markup by closing back to the matching element.
 		guard let index = elements.lastIndex(where: { $0.name == name }) else { return }
+
+		if typography.styles.bookTables, endTableElement(name) {
+			elements.removeSubrange(index...)
+			return
+		}
 		let closed = elements[index...]
 		let closesBlock = closed.contains { $0.block != nil }
 		for element in closed.reversed() where element.block != nil {
@@ -274,6 +292,68 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
 		guard skipDepth == 0, styleText != nil, let css = String(data: CDATABlock, encoding: .utf8) else { return }
 		styleText? += css
+	}
+
+	// MARK: Tables
+
+	/// Rows become single paragraphs with their cells separated by tabs, which the typesetter lines up in columns.
+	/// Returns whether the element was handled as part of a table.
+	private func startTableElement(_ name: String) -> Bool {
+		switch name {
+		case "table":
+			finishParagraph()
+			tables.append(TableColumns())
+			return true
+		case "tr" where !tables.isEmpty:
+			finishParagraph()
+			rowCellLengths = []
+			return true
+		case "td", "th":
+			guard !tables.isEmpty, var cells = rowCellLengths else { return false }
+			if !cells.isEmpty {
+				output.append(NSAttributedString(string: Self.tab, attributes: paragraphAttributes(for: currentStyle())))
+			}
+			cells.append(0)
+			rowCellLengths = cells
+			cellStart = output.length
+			return true
+		case "thead", "tbody", "tfoot", "colgroup", "col":
+			return !tables.isEmpty
+		default:
+			return false
+		}
+	}
+
+	private func endTableElement(_ name: String) -> Bool {
+		switch name {
+		case "table" where !tables.isEmpty:
+			tables.removeLast()
+			finishParagraph()
+			return true
+		case "tr" where rowCellLengths != nil:
+			if let cells = rowCellLengths, let table = tables.last, let format {
+				table.addRow(cellLengths: cells)
+				format.table = table
+				format.alignment = .natural
+				format.firstLineIndent = 0
+			}
+			rowCellLengths = nil
+			finishParagraph()
+			return true
+		case "td", "th":
+			guard var cells = rowCellLengths, !cells.isEmpty else { return false }
+			// Whitespace and line breaks at a cell's end would otherwise sit before the next cell's tab.
+			while lastCharacter == Self.space || lastCharacter == Self.lineSeparatorCharacter, output.length > cellStart {
+				output.deleteCharacters(in: NSRange(location: output.length - 1, length: 1))
+			}
+			cells[cells.count - 1] = output.length - cellStart
+			rowCellLengths = cells
+			return true
+		case "thead", "tbody", "tfoot", "colgroup", "col":
+			return !tables.isEmpty
+		default:
+			return false
+		}
 	}
 
 	// MARK: Elements and styles
@@ -656,7 +736,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var text = text
 
 		if collapsingWhitespace {
-			text = Self.collapsingWhitespace(in: text, dropLeadingSpace: endsAtLineStart || lastCharacter == Self.space)
+			text = Self.collapsingWhitespace(in: text, dropLeadingSpace: endsAtLineStart || lastCharacter == Self.space || lastCharacter == Self.tabCharacter)
 		} else {
 			text = text.replacing("\r\n", with: Self.lineSeparator).replacing("\n", with: Self.lineSeparator)
 		}
@@ -774,8 +854,20 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		lastCharacter == nil || lastCharacter == Self.newline || lastCharacter == Self.lineSeparatorCharacter
 	}
 
+	/// Inside a table cell, blocks only start new lines within the cell, so the row stays one paragraph.
+	private var isInTableCell: Bool {
+		rowCellLengths?.isEmpty == false
+	}
+
 	/// Ends the current paragraph. The newline takes the paragraph's style, as Core Text expects.
 	private func finishParagraph() {
+		if isInTableCell {
+			if output.length > cellStart, lastCharacter != Self.lineSeparatorCharacter {
+				output.append(NSAttributedString(string: Self.lineSeparator, attributes: paragraphAttributes(for: currentStyle())))
+			}
+			return
+		}
+
 		format = nil
 		guard output.length > 0 else { return }
 

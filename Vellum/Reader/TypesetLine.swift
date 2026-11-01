@@ -32,6 +32,8 @@ nonisolated struct TypesetLine: @unchecked Sendable {
 	var borderLeft = 0.0
 	var paragraphIndent = 0.0
 	var paragraphWidth = 0.0
+	/// For a table row: each cell's lines, with their position from the line's left and top. `line` is then empty.
+	var cells: [(line: CTLine, x: Double, baseline: Double)] = []
 
 	/// The gap between a rule and the text it's next to.
 	static let ruleGap = 6.0
@@ -58,6 +60,7 @@ nonisolated extension TypesetLine {
 		line.borderLeft = borderLeft
 		line.paragraphIndent = paragraphIndent
 		line.paragraphWidth = paragraphWidth
+		line.cells = cells
 		return line
 	}
 }

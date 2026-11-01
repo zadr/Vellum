@@ -38,9 +38,11 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 	var bookFonts = true
 	/// Draw the book's borders and rules.
 	var bookBorders = true
+	/// Lay tables out in columns. Off lists each cell on its own line.
+	var bookTables = true
 
 	private enum CodingKeys: String, CodingKey {
-		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents, bookMargins, bookTextEffects, bookFonts, bookBorders
+		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents, bookMargins, bookTextEffects, bookFonts, bookBorders, bookTables
 	}
 
 	init() {}
@@ -59,6 +61,7 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 		bookTextEffects = try container.decodeIfPresent(Bool.self, forKey: .bookTextEffects) ?? defaults.bookTextEffects
 		bookFonts = try container.decodeIfPresent(Bool.self, forKey: .bookFonts) ?? defaults.bookFonts
 		bookBorders = try container.decodeIfPresent(Bool.self, forKey: .bookBorders) ?? defaults.bookBorders
+		bookTables = try container.decodeIfPresent(Bool.self, forKey: .bookTables) ?? defaults.bookTables
 	}
 }
 
