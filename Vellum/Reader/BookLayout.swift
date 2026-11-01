@@ -224,7 +224,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 			ImageRun.draw(in: line.line, at: origin, context: context)
 
 			if let dropCap = line.dropCap {
-				context.textPosition = CGPoint(x: textRect.minX, y: page.height - (top + dropCap.baseline))
+				context.textPosition = CGPoint(x: textRect.minX + dropCap.x, y: page.height - (top + dropCap.baseline))
 				CTLineDraw(dropCap.line, context)
 			}
 		}

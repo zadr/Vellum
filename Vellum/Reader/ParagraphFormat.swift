@@ -6,6 +6,8 @@ nonisolated final class ParagraphFormat: @unchecked Sendable {
 	var alignment = CTTextAlignment.natural
 	/// Space from the left of the column to the paragraph's lines.
 	var indent = 0.0
+	/// Space from the paragraph's lines to the right of the column.
+	var rightIndent = 0.0
 	/// Extra indent for the first line only. Negative for a hanging indent, as in lists and notes.
 	var firstLineIndent = 0.0
 	var lineHeight = 1.0

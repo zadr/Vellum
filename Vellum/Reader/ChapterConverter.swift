@@ -88,6 +88,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 	private var lastFormat: ParagraphFormat?
 	/// Top margins of blocks opened since the last paragraph, which the next paragraph starts with.
 	private var pendingSpaceBefore = 0.0
+	/// Every paragraph's format, so indents every paragraph shares can be removed at the end.
+	private var formats: [ParagraphFormat] = []
 
 	private init(file: URL, typography: ReaderTypography, textArea: CGSize, styleSheets: StyleSheetCache) {
 		self.file = file
@@ -118,6 +120,16 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		}
 
 		trimTrailingWhitespace()
+
+		// Margins every paragraph shares come from wrappers around the whole chapter. The column width setting
+		// already decides that space, so they're removed rather than narrowing every page.
+		if let shared = formats.map(\.indent).min(), shared > 0 {
+			formats.forEach { $0.indent -= shared }
+		}
+		if let shared = formats.map(\.rightIndent).min(), shared > 0 {
+			formats.forEach { $0.rightIndent -= shared }
+		}
+
 		return Output(text: output, anchors: anchors)
 	}
 
@@ -415,11 +427,20 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			format.indent = size * 1.5
 		case .listItem:
 			format.indent = size * 1.5
+			// The marker hangs to the left of the item's text.
 			format.firstLineIndent = -size
 		case .image:
 			format.lineHeight = 1
 		case .paragraph, .preformatted:
 			break
+		}
+
+		if styles.bookMargins {
+			// The book's margins and padding, added up through every block the paragraph is in.
+			let blocks = elements.filter { $0.block != nil && $0.name != "body" && $0.name != "html" }
+			let limit = textArea.width * 0.4
+			format.indent = min(max(blocks.reduce(0) { $0 + horizontalSpace(of: $1, side: "left") }, 0), limit)
+			format.rightIndent = min(max(blocks.reduce(0) { $0 + horizontalSpace(of: $1, side: "right") }, 0), limit)
 		}
 
 		var alignment = style.alignment
@@ -445,7 +466,25 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		self.format = format
 		lastFormat = format
+		formats.append(format)
 		return format
+	}
+
+	/// The space a block wants beside it, from its margin and padding on that side.
+	private func horizontalSpace(of element: Element, side: String) -> Double {
+		let fontSize = element.fontSize
+		let margin = (element.css.length("margin-\(side)") ?? Self.defaultInset(for: element.name, side: side, property: "margin"))?.points(fontSize: fontSize, width: textArea.width) ?? 0
+		let padding = (element.css.length("padding-\(side)") ?? Self.defaultInset(for: element.name, side: side, property: "padding"))?.points(fontSize: fontSize, width: textArea.width) ?? 0
+		return margin + padding
+	}
+
+	/// Browsers' default side margins and padding, for books that don't set their own.
+	private static func defaultInset(for name: String, side: String, property: String) -> CSSLength? {
+		switch (name, side, property) {
+		case ("blockquote", _, "margin"), ("figure", _, "margin"): CSSLength("40px")
+		case ("ul", "left", "padding"), ("ol", "left", "padding"), ("dd", "left", "margin"): CSSLength("40px")
+		default: nil
+		}
 	}
 
 	/// The book's line height for text in the current elements, as a multiple of the font's natural line height.

@@ -67,13 +67,13 @@ nonisolated struct ParagraphTypesetter {
 
 		func inset(_ line: Int) -> Double {
 			if let dropCap, line < dropCap.lines {
-				return dropCap.width
+				return style.indent + dropCap.width
 			}
 			return line == 0 ? style.firstLineInset : style.indent
 		}
 
 		func lineWidth(_ line: Int) -> Double {
-			max(width - inset(line), 1)
+			max(width - inset(line) - style.rightIndent, 1)
 		}
 
 		// Like TeX: try without hyphenation first, then with it, then accept loose lines; Core Text's own breaking is the last resort.
@@ -105,7 +105,7 @@ nonisolated struct ParagraphTypesetter {
 			let last = spanned[spanned.endIndex - 1]
 			let baseline = spanned.dropLast().reduce(0) { $0 + $1.height } + last.height - last.descent
 
-			lines[0].dropCap = TypesetLine.DropCap(line: dropCap.line, baseline: baseline)
+			lines[0].dropCap = TypesetLine.DropCap(line: dropCap.line, x: style.indent, baseline: baseline)
 			lines[0].keepWithNext = spanned.count - 1
 			lines[0] = lines[0].including(paragraphOffset..<(lines[0].location + lines[0].length))
 		}

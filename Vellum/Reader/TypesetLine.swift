@@ -5,6 +5,8 @@ nonisolated struct TypesetLine: @unchecked Sendable {
 	/// A large initial letter drawn beside the first lines of a paragraph.
 	struct DropCap {
 		let line: CTLine
+		/// How far the letter starts from the left of the text column.
+		let x: Double
 		/// Where the letter's baseline sits, measured down from the top of the line it's drawn with.
 		let baseline: Double
 	}
