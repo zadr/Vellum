@@ -138,7 +138,7 @@ nonisolated struct ParagraphTypesetter {
 		// The paragraph's first lines are kept together, as are its last lines; short paragraphs stay whole.
 		if !lines.isEmpty {
 			let orphans = max(style.orphans, 1), widows = max(style.widows, 1)
-			if lines.count < orphans + widows {
+			if style.avoidsBreakInside || lines.count < orphans + widows {
 				lines[0].keepWithNext = max(lines[0].keepWithNext, lines.count - 1)
 			} else {
 				lines[0].keepWithNext = max(lines[0].keepWithNext, orphans - 1)
@@ -295,8 +295,13 @@ nonisolated struct ParagraphTypesetter {
 					end += 1
 				}
 				let spaceWidth = x(end) - x(index)
-				// Ragged text can't squeeze its spaces, but stretch still measures how unevenly lines fill.
-				append(LineBreaker.Item(kind: .glue, width: spaceWidth, stretch: spaceWidth / 2, shrink: isJustified ? spaceWidth / 3 : 0), end: index, next: end)
+				if text.attribute(ChapterConverter.noWrapAttribute, at: index, effectiveRange: nil) != nil {
+					// Text that mustn't wrap: the space is part of the word around it, never a break.
+					append(LineBreaker.Item(kind: .box, width: spaceWidth), end: end, next: end)
+				} else {
+					// Ragged text can't squeeze its spaces, but stretch still measures how unevenly lines fill.
+					append(LineBreaker.Item(kind: .glue, width: spaceWidth, stretch: spaceWidth / 2, shrink: isJustified ? spaceWidth / 3 : 0), end: index, next: end)
+				}
 				index = end
 				continue
 			}
@@ -313,7 +318,7 @@ nonisolated struct ParagraphTypesetter {
 					breakPoints.append((location, false))
 				}
 			}
-			if let hyphenator, breakPoints.isEmpty {
+			if let hyphenator, breakPoints.isEmpty, text.attribute(ChapterConverter.noHyphenationAttribute, at: index, effectiveRange: nil) == nil {
 				breakPoints = hyphenator.points(in: string, word: index..<end).map { ($0, true) }
 			}
 
@@ -427,8 +432,11 @@ nonisolated struct ParagraphTypesetter {
 			let spaces = (0..<content.length).filter { (content.string as NSString).character(at: $0) == Self.space }
 			if !spaces.isEmpty {
 				let extra = (lineWidth - lineWidthUsed) / Double(spaces.count)
+				let kern = NSAttributedString.Key(kCTKernAttributeName as String)
 				for location in spaces {
-					content.addAttribute(NSAttributedString.Key(kCTKernAttributeName as String), value: extra, range: NSRange(location: location, length: 1))
+					// Added to any word spacing the book already gives the space.
+					let existing = (content.attribute(kern, at: location, effectiveRange: nil) as? Double) ?? 0
+					content.addAttribute(kern, value: existing + extra, range: NSRange(location: location, length: 1))
 				}
 				line = CTLineCreateWithAttributedString(content)
 				lineWidthUsed = CTLineGetTypographicBounds(line, nil, nil, nil)

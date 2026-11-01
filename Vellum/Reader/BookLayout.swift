@@ -267,6 +267,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 				CTLineDraw(cell.line, context)
 				ImageRun.draw(in: cell.line, at: cellOrigin, context: context)
 				Strikethrough.draw(in: cell.line, at: cellOrigin, context: context)
+				Overline.draw(in: cell.line, at: cellOrigin, context: context)
 			}
 
 			let origin = CGPoint(x: textRect.minX + line.x, y: page.height - (top + line.height - line.descent))
@@ -276,6 +277,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 			CTLineDraw(line.line, context)
 			ImageRun.draw(in: line.line, at: origin, context: context)
 			Strikethrough.draw(in: line.line, at: origin, context: context)
+			Overline.draw(in: line.line, at: origin, context: context)
 
 			if let dropCap = line.dropCap {
 				context.setFillColor(textColor)

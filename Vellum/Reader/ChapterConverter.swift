@@ -56,6 +56,14 @@ nonisolated final class ChapterConverter {
 		var link: URL?
 		var color: CGColor?
 		var backgroundColor: CGColor?
+		var listStyleType: String?
+		var preservesWhitespace: Bool?
+		var wraps: Bool?
+		var wordSpacing: Double?
+		var isInvisible: Bool?
+		var hyphenates: Bool?
+		var baselineShift: Double?
+		var isOverlined: Bool?
 	}
 
 	/// The style that applies to text at the current point, after inheriting from every open element.
@@ -80,7 +88,21 @@ nonisolated final class ChapterConverter {
 		var color: CGColor?
 		/// From inline elements only; a block's background is drawn behind its paragraphs instead.
 		var highlight: CGColor?
+		var wraps = true
+		/// In ems.
+		var wordSpacing = 0.0
+		var isInvisible = false
+		var hyphenates = true
+		/// In ems, raising or lowering the text.
+		var baselineShift = 0.0
+		var isOverlined = false
 	}
+
+	/// Marks text drawn with a line over it. The page draws the line.
+	static let overlineAttribute = NSAttributedString.Key("VellumOverline")
+	/// Marks text whose words shouldn't be hyphenated or, for `false` wrapping, broken between.
+	static let noHyphenationAttribute = NSAttributedString.Key("VellumNoHyphenation")
+	static let noWrapAttribute = NSAttributedString.Key("VellumNoWrap")
 
 	/// Marks text to strike through. Core Text has no attribute for it, so the page draws the line.
 	static let strikethroughAttribute = NSAttributedString.Key("VellumStrikethrough")
@@ -132,6 +154,8 @@ nonisolated final class ChapterConverter {
 	private var quoteDepth = 0
 	/// The target of an `<a>` being opened, picked up by its element.
 	private var pendingLink: URL?
+	/// A list item's marker, waiting for the item's first text.
+	private var pendingListMarker: String?
 
 	private init(file: URL, typography: ReaderTypography, textArea: CGSize, styleSheets: StyleSheetCache) {
 		self.file = file
@@ -317,6 +341,9 @@ nonisolated final class ChapterConverter {
 		}
 
 		if closesBlock {
+			if name == "li" {
+				pendingListMarker = nil
+			}
 			finishParagraph()
 			pendingDropCap = nil
 		}
@@ -466,6 +493,17 @@ nonisolated final class ChapterConverter {
 		if typography.styles.bookFonts {
 			element.fontFamily = css.properties["font-family"]
 		}
+		element.listStyleType = css.listStyleType
+		element.preservesWhitespace = css.preservesWhitespace
+		element.wraps = css.wraps
+		element.isInvisible = css.isInvisible
+		element.hyphenates = css.hyphenates
+		if typography.styles.bookTextEffects {
+			element.wordSpacing = css.wordSpacing
+			element.baselineShift = css.baselineShift
+			element.isOverlined = css.isOverlined
+			element.superscript = css.verticalPosition ?? element.superscript
+		}
 		element.link = pendingLink
 		pendingLink = nil
 		if typography.styles.bookColors {
@@ -502,6 +540,14 @@ nonisolated final class ChapterConverter {
 			style.isStruckThrough = style.isStruckThrough || element.isStruckThrough == true
 			style.link = element.link ?? style.link
 			style.color = element.color ?? style.color
+			style.isPreformatted = element.preservesWhitespace ?? style.isPreformatted
+			style.wraps = element.wraps ?? style.wraps
+			style.wordSpacing = element.wordSpacing ?? style.wordSpacing
+			style.isInvisible = element.isInvisible ?? style.isInvisible
+			style.hyphenates = element.hyphenates ?? style.hyphenates
+			// Shifts add up through nested elements; they aren't inherited.
+			style.baselineShift += element.baselineShift ?? 0
+			style.isOverlined = style.isOverlined || element.isOverlined == true
 			if element.block == nil, let background = element.backgroundColor {
 				style.highlight = background
 			}
@@ -517,7 +563,7 @@ nonisolated final class ChapterConverter {
 			style.fontScale = 1
 		}
 
-		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)-\(style.fontFamily ?? "")-\(style.isUnderlined)-\(style.isStruckThrough)-\(style.link?.absoluteString ?? "")-\(Self.colorKey(style.color))-\(Self.colorKey(style.highlight))"
+		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)-\(style.fontFamily ?? "")-\(style.isUnderlined)-\(style.isStruckThrough)-\(style.link?.absoluteString ?? "")-\(Self.colorKey(style.color))-\(Self.colorKey(style.highlight))-\(style.wraps)-\(style.wordSpacing)-\(style.isInvisible)-\(style.hyphenates)-\(style.baselineShift)-\(style.isOverlined)"
 		if let attributes = attributeCache[key] {
 			return attributes
 		}
@@ -553,6 +599,29 @@ nonisolated final class ChapterConverter {
 
 		if let highlight = style.highlight {
 			attributes[Self.highlightAttribute] = highlight
+		}
+
+		if style.isInvisible {
+			// Takes its space, as CSS visibility does, but isn't seen.
+			attributes[NSAttributedString.Key(kCTForegroundColorAttributeName as String)] = CGColor(gray: 0, alpha: 0)
+			attributes[NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String)] = nil
+			attributes[Self.highlightAttribute] = nil
+		}
+
+		if style.baselineShift != 0 {
+			attributes[NSAttributedString.Key(kCTBaselineOffsetAttributeName as String)] = style.baselineShift * typography.size * style.fontScale
+		}
+
+		if style.isOverlined {
+			attributes[Self.overlineAttribute] = true
+		}
+
+		if !style.hyphenates {
+			attributes[Self.noHyphenationAttribute] = true
+		}
+
+		if !style.wraps {
+			attributes[Self.noWrapAttribute] = true
 		}
 
 		if style.letterSpacing != 0 {
@@ -662,6 +731,7 @@ nonisolated final class ChapterConverter {
 			format.widows = elements.last { $0.block != nil && $0.css.widows != nil }?.css.widows ?? 2
 			format.orphans = elements.last { $0.block != nil && $0.css.orphans != nil }?.css.orphans ?? 2
 			format.keepWithNext = isHeading(style.block) || elements.contains { $0.block != nil && $0.css.avoidsBreakAfter }
+			format.avoidsBreakInside = elements.contains { $0.block != nil && $0.css.avoidsBreakInside }
 		} else {
 			format.widows = 1
 			format.orphans = 1
@@ -826,6 +896,11 @@ nonisolated final class ChapterConverter {
 
 		guard !text.isEmpty else { return }
 
+		if let marker = pendingListMarker {
+			pendingListMarker = nil
+			output.append(NSAttributedString(string: marker, attributes: paragraphAttributes(for: currentStyle())))
+		}
+
 		let style = currentStyle()
 		let isParagraphStart = endsAtLineStart
 		text = transformed(text, style.textTransform)
@@ -852,7 +927,16 @@ nonisolated final class ChapterConverter {
 		if let smallCaps = style.smallCaps {
 			appendSmallCaps(text, smallCaps, style: style)
 		} else {
+			let start = output.length
 			output.append(NSAttributedString(string: text, attributes: paragraphAttributes(for: style)))
+			if style.wordSpacing != 0 {
+				// Word spacing widens each space, so line breaking measures it and justification adds to it.
+				let added = style.wordSpacing * typography.size * style.fontScale
+				let string = output.mutableString
+				for index in start..<output.length where string.character(at: index) == Self.space {
+					output.addAttribute(NSAttributedString.Key(kCTKernAttributeName as String), value: added, range: NSRange(location: index, length: 1))
+				}
+			}
 		}
 	}
 
@@ -963,6 +1047,8 @@ nonisolated final class ChapterConverter {
 		output.append(NSAttributedString(string: "\n", attributes: attributes))
 	}
 
+	/// The marker for a list item, as the list's `list-style-type` says: a bullet, a number, a letter, a Roman
+	/// numeral, or nothing.
 	private func appendListMarker() {
 		guard let listIndex = elements.dropLast().lastIndex(where: { $0.name == "ul" || $0.name == "ol" }) else {
 			appendText("• ", collapsingWhitespace: false)
@@ -970,9 +1056,58 @@ nonisolated final class ChapterConverter {
 		}
 
 		elements[listIndex].listCount += 1
-		let marker = elements[listIndex].isOrderedList ? "\(elements[listIndex].listCount). " : "• "
-		appendText(marker, collapsingWhitespace: false)
+		let number = elements[listIndex].listCount
+		// The innermost list style set on the list, its items, or anything in between; else the list's own default.
+		let type = elements[listIndex...].last { $0.listStyleType != nil }?.listStyleType
+			?? elements[..<listIndex].last { $0.listStyleType != nil }?.listStyleType
+			?? (elements[listIndex].isOrderedList ? "decimal" : "disc")
+
+		let marker: String? = switch type {
+		case "none": nil
+		case "disc": "•"
+		case "circle": "◦"
+		case "square": "▪"
+		case "decimal": "\(number)."
+		case "decimal-leading-zero": String(format: "%02d.", number)
+		case "lower-alpha", "lower-latin": "\(Self.alphabetic(number))."
+		case "upper-alpha", "upper-latin": "\(Self.alphabetic(number).uppercased())."
+		case "lower-roman": "\(Self.roman(number))."
+		case "upper-roman": "\(Self.roman(number).uppercased())."
+		case "lower-greek": "\(Self.greek(number))."
+		default: elements[listIndex].isOrderedList ? "\(number)." : "•"
+		}
+
+		// Held until the item's first text, so it sits on that line even when the text is in a block inside the item.
+		pendingListMarker = marker.map { $0 + " " }
 	}
+
+	private static func alphabetic(_ number: Int) -> String {
+		var number = number, result = ""
+		while number > 0 {
+			number -= 1
+			result = String(UnicodeScalar(UInt8(97 + number % 26))) + result
+			number /= 26
+		}
+		return result
+	}
+
+	private static func roman(_ number: Int) -> String {
+		let values = [(1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")]
+		var number = number, result = ""
+		for (value, letters) in values {
+			while number >= value {
+				result += letters
+				number -= value
+			}
+		}
+		return result
+	}
+
+	private static func greek(_ number: Int) -> String {
+		let letters = Array("αβγδεζηθικλμνξοπρστυφχψω")
+		return String(letters[(number - 1) % letters.count])
+	}
+
 
 	/// A paragraph holding nothing but a horizontal line.
 	private func appendRuleLine(width: Double) {

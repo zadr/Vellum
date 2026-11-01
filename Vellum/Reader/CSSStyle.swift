@@ -147,6 +147,16 @@ nonisolated struct CSSStyle: Sendable {
 		decoration.map { $0.contains("underline") }
 	}
 
+	/// Text the book wants superscript or subscript: 1 or -1, or 0 for the baseline.
+	var verticalPosition: Int? {
+		switch value("vertical-align") {
+		case "super": 1
+		case "sub": -1
+		case "baseline": 0
+		default: nil
+		}
+	}
+
 	var isStruckThrough: Bool? {
 		decoration.map { $0.contains("line-through") }
 	}
@@ -265,6 +275,66 @@ nonisolated struct CSSStyle: Sendable {
 		}
 		parts.append(current)
 		return parts.lazy.compactMap(CSSColor.parse).first
+	}
+
+	/// The list marker style, inherited from the list onto its items.
+	var listStyleType: String? {
+		value("list-style-type") ?? value("list-style").flatMap { shorthand in
+			shorthand.split(separator: " ").map(String.init).first { !["inside", "outside"].contains($0) && !$0.hasPrefix("url(") }
+		}
+	}
+
+	/// Whether whitespace and line breaks in the text are kept, rather than collapsed.
+	var preservesWhitespace: Bool? {
+		value("white-space").map { $0.hasPrefix("pre") || $0 == "break-spaces" }
+	}
+
+	/// Whether lines may break between words.
+	var wraps: Bool? {
+		value("white-space").map { $0 != "nowrap" && $0 != "pre" }
+	}
+
+	/// Extra space between words, in ems.
+	var wordSpacing: Double? {
+		guard let value = value("word-spacing") else { return nil }
+		if value == "normal" { return 0 }
+		guard let length = CSSLength(value), length.unit != .percent else { return nil }
+		return length.unit == .em ? length.value : length.value / 16
+	}
+
+	/// Whether the element takes space but isn't drawn.
+	var isInvisible: Bool? {
+		value("visibility").map { $0 == "hidden" || $0 == "collapse" }
+	}
+
+	/// Whether words may be hyphenated. `nil` when not set.
+	var hyphenates: Bool? {
+		let value = value("hyphens") ?? value("-webkit-hyphens") ?? value("-epub-hyphens") ?? value("-moz-hyphens") ?? value("adobe-hyphenate")
+		return value.map { $0 != "none" && $0 != "manual" }
+	}
+
+	/// Whether the element should be kept on one page.
+	var avoidsBreakInside: Bool {
+		(value("page-break-inside") ?? value("break-inside")) == "avoid"
+	}
+
+	/// How far the text is raised, in ems, for `vertical-align` values other than sub and super.
+	var baselineShift: Double? {
+		guard let value = value("vertical-align") else { return nil }
+		switch value {
+		case "super", "sub", "baseline": return nil
+		case "top", "text-top": return 0.3
+		case "middle": return 0.15
+		case "bottom", "text-bottom": return -0.2
+		default:
+			guard let length = CSSLength(value) else { return nil }
+			// Percentages are of the line height, taken as 1.2 ems.
+			return length.unit == .percent ? length.value / 100 * 1.2 : length.unit == .em ? length.value : length.value / 16
+		}
+	}
+
+	var isOverlined: Bool? {
+		value("text-decoration-line").map { $0.contains("overline") } ?? value("text-decoration").map { $0.contains("overline") }
 	}
 
 	var isHidden: Bool {

@@ -25,6 +25,8 @@ nonisolated final class ParagraphFormat: @unchecked Sendable {
 	var widows = 2
 	/// Keep the paragraph on the same page as the start of the next one.
 	var keepWithNext = false
+	/// Keep all the paragraph's lines on one page, where they fit.
+	var avoidsBreakInside = false
 	/// Filled behind the paragraph, from the background color of the block it's in.
 	var backgroundColor: CGColor?
 	/// Where that block's box sits: its distance from the column's left and right edges.
