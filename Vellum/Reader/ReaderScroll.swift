@@ -1,77 +1,61 @@
 import SwiftUI
 
 /// The book as one continuous column of text, scrolled vertically.
+/// Pieces sit at exact offsets worked out from the layout, and only those near the screen are drawn, so the scroll's
+/// height is exact and a saved line can be put precisely at the top of the screen.
 struct ReaderScroll: View {
 	let model: ReaderModel
 	let layout: BookLayout
 	let textColor: CGColor
 
-	@State private var scrollPosition = ScrollPosition(idType: Int.self)
+	@State private var scrollPosition = ScrollPosition()
 	/// The scroll offset in the terms `scrollTo(y:)` uses, which count the top safe-area inset.
-	@State private var scrollOffset = 0.0
+	@State private var offset = 0.0
+	@State private var viewportHeight = 0.0
 
 	var body: some View {
+		let metrics = model.scrollMetrics
+		let drawn = metrics?.pieces(from: offset - viewportHeight, to: offset + viewportHeight * 2) ?? 0..<0
+
 		ScrollView {
-			LazyVStack(spacing: 0) {
-				ForEach(layout.pages.indices, id: \.self) { index in
+			ZStack(alignment: .top) {
+				Color.clear
+					.frame(height: metrics?.contentHeight ?? 0)
+
+				ForEach(drawn, id: \.self) { index in
 					ReaderScrollPiece(layout: layout, index: index, textColor: textColor, toggleChrome: model.toggleChrome, follow: model.follow)
-						.padding(.top, index > 0 && layout.isChapterStart(index) ? Design.readerChapterGap : 0)
-						.onGeometryChange(for: Double.self) { proxy in
-							proxy.frame(in: .scrollView).minY
-						} action: { top in
-							model.scrollPiece(index, movedTo: top)
-						}
-						.onDisappear {
-							model.scrollPieceDisappeared(index)
-						}
+						.offset(y: metrics?.tops[index] ?? 0)
 				}
 			}
-			.scrollTargetLayout()
+			.frame(maxWidth: .infinity, alignment: .top)
 		}
 		.scrollPosition($scrollPosition)
 		.scrollIndicators(.hidden)
-		.onScrollGeometryChange(for: Double.self) { geometry in
-			geometry.contentOffset.y + geometry.contentInsets.top
-		} action: { _, offset in
-			scrollOffset = offset
+		.onScrollGeometryChange(for: ReaderScrollState.self) { geometry in
+			ReaderScrollState(offset: geometry.contentOffset.y + geometry.contentInsets.top, height: geometry.containerSize.height)
+		} action: { _, state in
+			offset = state.offset
+			viewportHeight = state.height
+			model.scrolled(to: state.offset)
 		}
 		.onScrollPhaseChange { oldPhase, newPhase in
 			// Only scrolling the reader did counts, not the scroll back to their place after a relayout.
 			if newPhase == .idle, oldPhase == .interacting || oldPhase == .decelerating {
-				model.scrollingStopped()
+				model.scrollingStopped(at: offset)
 			}
 		}
-		.task {
-			await restorePosition()
-		}
+		.onAppear(perform: restorePosition)
 		.onChange(of: model.jump?.number) {
 			if let page = model.jump?.page {
-				scrollPosition.scrollTo(id: page, anchor: .top)
+				scrollPosition.scrollTo(y: model.scrollOffset(ofPiece: page))
 			}
 		}
 		// A new layout has different pieces, so start a fresh scroll view at the reader's place.
 		.id(ObjectIdentifier(layout))
 	}
 
-	/// Scrolls to the saved piece, then down to the saved line within it once that piece has settled at the top.
-	private func restorePosition() async {
-		let target = model.scrollRestoreTarget
-		scrollPosition.scrollTo(id: target.piece, anchor: .top)
-
-		// Wait until the piece stops moving. Where it settles is the top edge pieces are measured against.
-		var previous: Double?
-		for _ in 0..<40 {
-			try? await Task.sleep(for: .milliseconds(25))
-
-			guard let top = model.pieceTop(target.piece) else { continue }
-			if top == previous {
-				model.scrollTopEdge = top
-				if target.y > 0 {
-					scrollPosition.scrollTo(y: scrollOffset + target.y)
-				}
-				return
-			}
-			previous = top
-		}
+	private func restorePosition() {
+		offset = model.savedScrollOffset
+		scrollPosition.scrollTo(y: offset)
 	}
 }

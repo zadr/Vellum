@@ -25,10 +25,6 @@ final class ReaderModel {
 
 	/// Where the reader is. Only changes when they move, so laying the book out again never loses their place.
 	@ObservationIgnored private var position: ReadingPosition
-	/// Where each scroll piece on screen starts, relative to the top of the scroll view.
-	@ObservationIgnored private var pieceTops: [Int: Double] = [:]
-	/// Where a piece scrolled to the top of the screen sits, in the same terms as `pieceTops`.
-	@ObservationIgnored var scrollTopEdge = 0.0
 	@ObservationIgnored private var layoutGeneration = 0
 	@ObservationIgnored private let onPositionChange: (ReadingPosition) -> Void
 
@@ -115,25 +111,30 @@ final class ReaderModel {
 
 	// MARK: Scrolling
 
-	/// The piece to scroll to when a scrolling layout appears, and how far down it the saved line is.
-	var scrollRestoreTarget: (piece: Int, y: Double) {
-		guard let layout else { return (0, 0) }
+	/// Where pieces sit in scroll mode. Set with each scrolling layout.
+	private(set) var scrollMetrics: ScrollMetrics?
+
+	/// The scroll offset that puts the saved line at the top of the screen.
+	var savedScrollOffset: Double {
+		guard let layout, let scrollMetrics, !scrollMetrics.tops.isEmpty else { return 0 }
 
 		let piece = layout.pageIndex(for: position)
 		let y = position.offset.map { layout.y(ofCharacter: $0, inPage: piece) } ?? 0
-		return (piece, y)
+		return scrollMetrics.tops[piece] + y
 	}
 
-	func scrollPiece(_ index: Int, movedTo top: Double) {
-		pieceTops[index] = top
+	/// The scroll offset of the top of a piece, for jumps in scroll mode.
+	func scrollOffset(ofPiece piece: Int) -> Double {
+		scrollMetrics?.tops[safe: piece] ?? 0
 	}
 
-	func scrollPieceDisappeared(_ index: Int) {
-		pieceTops[index] = nil
-	}
-
-	func pieceTop(_ index: Int) -> Double? {
-		pieceTops[index]
+	/// Keeps the page shown in the controls up to date as the reader scrolls.
+	func scrolled(to y: Double) {
+		guard let scrollMetrics else { return }
+		let piece = scrollMetrics.piece(at: y)
+		if piece != visiblePage {
+			visiblePage = piece
+		}
 	}
 
 	/// The reader swiped to a page, in page mode. Called when the swipe settles.
@@ -143,17 +144,17 @@ final class ReaderModel {
 	}
 
 	/// Records the line at the top of the screen once scrolling the reader did comes to rest.
-	func scrollingStopped() {
-		guard let layout, layout.isComplete, layout.mode == .scroll else { return }
+	func scrollingStopped(at y: Double) {
+		guard let layout, layout.isComplete, layout.mode == .scroll, let scrollMetrics, !scrollMetrics.tops.isEmpty else { return }
 
-		// The piece crossing the top edge of the screen.
-		let edge = scrollTopEdge + 0.5
-		let crossing = pieceTops
-			.filter { index, top in layout.pages.indices.contains(index) && top <= edge && top + layout.pages[index].height > edge }
-			.max { $0.value < $1.value }
-		guard let (piece, top) = crossing else { return }
-
-		let offset = layout.characterOffset(inPage: piece, atY: scrollTopEdge - top)
+		var piece = scrollMetrics.piece(at: y)
+		var pieceY = max(y - scrollMetrics.tops[piece], 0)
+		// In the gap above a chapter, the reader is at the start of it.
+		if pieceY >= layout.pages[piece].height, piece + 1 < layout.pages.count {
+			piece += 1
+			pieceY = 0
+		}
+		let offset = layout.characterOffset(inPage: piece, atY: pieceY)
 		visiblePage = piece
 		save(layout.position(forPage: piece, offset: offset))
 	}
@@ -189,9 +190,9 @@ final class ReaderModel {
 	}
 
 	private func show(_ newLayout: BookLayout) {
-		pieceTops = [:]
 		// Page numbers mean something different in a new layout.
 		backStack = []
+		scrollMetrics = newLayout.mode == .scroll ? ScrollMetrics(layout: newLayout, chapterGap: Design.readerChapterGap) : nil
 		layout = newLayout
 		visiblePage = newLayout.pageIndex(for: position)
 	}
