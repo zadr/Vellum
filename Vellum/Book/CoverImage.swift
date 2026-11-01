@@ -1,12 +1,22 @@
 import SwiftUI
 
-/// A book's cover from Open Library, with a tinted placeholder while it loads or when there isn't one.
+/// A book's cover, with a tinted placeholder while it loads or when there isn't one.
 struct CoverImage: View {
-	let book: Book
+	let url: URL?
 	let width: Double
 
+	init(url: URL?, width: Double) {
+		self.url = url
+		self.width = width
+	}
+
+	/// The cover Open Library has for the book.
+	init(book: Book, width: Double) {
+		self.init(url: book.coverURL, width: width)
+	}
+
 	var body: some View {
-		AsyncImage(url: book.coverURL, transaction: Transaction(animation: .easeOut)) { phase in
+		AsyncImage(url: url, transaction: Transaction(animation: .easeOut)) { phase in
 			if let image = phase.image {
 				image
 					.resizable()

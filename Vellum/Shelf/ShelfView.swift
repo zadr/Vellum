@@ -10,6 +10,7 @@ struct ShelfView: View {
 	@State private var isEnteringISBN = false
 	@State private var shelfNameEditor: ShelfNameEditor?
 	@State private var isConfirmingShelfDeletion = false
+	@State private var isShowingCalibre = false
 
 	var body: some View {
 		let shelf = library.selectedShelf
@@ -33,7 +34,8 @@ struct ShelfView: View {
 						enterISBN: enterISBN,
 						newShelf: newShelf,
 						renameShelf: renameShelf,
-						deleteShelf: confirmShelfDeletion
+						deleteShelf: confirmShelfDeletion,
+						openCalibre: openCalibre
 					)
 				}
 				.confirmationDialog("Delete “\(shelf.name)”?", isPresented: $isConfirmingShelfDeletion, titleVisibility: .visible) {
@@ -49,6 +51,9 @@ struct ShelfView: View {
 			ISBNEntryView()
 		}
 		.sheet(item: $shelfNameEditor, content: ShelfNameSheet.init)
+		.sheet(isPresented: $isShowingCalibre) {
+			CalibreView()
+		}
 		.onChange(of: library.selectedShelfID) {
 			searchText = ""
 		}
@@ -81,9 +86,14 @@ struct ShelfView: View {
 	private func deleteShelf() {
 		library.deleteShelf(library.selectedShelfID)
 	}
+
+	private func openCalibre() {
+		isShowingCalibre = true
+	}
 }
 
 #Preview {
 	ShelfView()
 		.environment(Library())
+		.environment(CalibreLibrary())
 }

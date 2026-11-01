@@ -20,8 +20,15 @@
 	<string>3</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Vellum uses the camera to scan the barcodes on your books.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Vellum connects to your Calibre server to list and download your books.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

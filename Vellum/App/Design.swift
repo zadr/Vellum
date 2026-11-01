@@ -13,4 +13,9 @@ enum Design {
 	static let cardCornerRadius = 20.0
 
 	static let maximumRating = 5
+
+	/// Body text size in the reader before Dynamic Type and the reader's own text size are applied.
+	static let readerTextSize = 19.0
+	/// How far each level of a book's table of contents is indented.
+	static let contentsIndent = 16.0
 }

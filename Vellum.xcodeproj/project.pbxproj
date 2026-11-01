@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		19A1D0102EB0000000A1B2C3 /* EPUBKit in Frameworks */ = {isa = PBXBuildFile; productRef = 19A1D0122EB0000000A1B2C3 /* EPUBKit */; };
+		19A1D0112EB0000000A1B2C3 /* Zip in Frameworks */ = {isa = PBXBuildFile; productRef = 19A1D0142EB0000000A1B2C3 /* Zip */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		1904C287256CD82E00D4E69E /* Vellum.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vellum.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +41,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				19A1D0102EB0000000A1B2C3 /* EPUBKit in Frameworks */,
+				19A1D0112EB0000000A1B2C3 /* Zip in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +84,10 @@
 				19A1D0012EB0000000A1B2C3 /* Vellum */,
 			);
 			name = Vellum;
+			packageProductDependencies = (
+				19A1D0122EB0000000A1B2C3 /* EPUBKit */,
+				19A1D0142EB0000000A1B2C3 /* Zip */,
+			);
 			productName = Vellum;
 			productReference = 1904C287256CD82E00D4E69E /* Vellum.app */;
 			productType = "com.apple.product-type.application";
@@ -103,6 +114,11 @@
 				Base,
 			);
 			mainGroup = 1904C27E256CD82E00D4E69E;
+			packageReferences = (
+				19A1D0132EB0000000A1B2C3 /* XCRemoteSwiftPackageReference "EPUBKit" */,
+				19A1D0152EB0000000A1B2C3 /* XCRemoteSwiftPackageReference "Zip" */,
+				19A1D0162EB0000000A1B2C3 /* XCRemoteSwiftPackageReference "AEXML" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1904C288256CD82E00D4E69E /* Products */;
 			projectDirPath = "";
@@ -316,6 +332,46 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		19A1D0132EB0000000A1B2C3 /* XCRemoteSwiftPackageReference "EPUBKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/witekbobrowski/EPUBKit";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
+		19A1D0152EB0000000A1B2C3 /* XCRemoteSwiftPackageReference "Zip" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/marmelroy/Zip";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.1.2;
+			};
+		};
+		19A1D0162EB0000000A1B2C3 /* XCRemoteSwiftPackageReference "AEXML" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tadija/AEXML";
+			requirement = {
+				kind = exactVersion;
+				version = 4.7.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		19A1D0122EB0000000A1B2C3 /* EPUBKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 19A1D0132EB0000000A1B2C3 /* XCRemoteSwiftPackageReference "EPUBKit" */;
+			productName = EPUBKit;
+		};
+		19A1D0142EB0000000A1B2C3 /* Zip */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 19A1D0152EB0000000A1B2C3 /* XCRemoteSwiftPackageReference "Zip" */;
+			productName = Zip;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1904C27F256CD82E00D4E69E /* Project object */;
 }
