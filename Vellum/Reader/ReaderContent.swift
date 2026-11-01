@@ -36,7 +36,7 @@ struct ReaderContent: View {
 				ContentUnavailableView("Can’t Show This Book", systemImage: "book.closed", description: Text(error))
 			}
 
-			if model.isLayingOut {
+			if model.layout == nil && model.isLayingOut {
 				ProgressView()
 			}
 		}

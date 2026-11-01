@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// A labelled slider for a reading setting. The setting only changes when the slider is let go,
-/// because every change lays the whole book out again.
+/// A labelled slider for a reading setting. The page behind updates as it moves.
 struct ReaderSettingSlider: View {
 	let title: String
 	@Binding var value: Double
@@ -11,37 +10,21 @@ struct ReaderSettingSlider: View {
 	let largerImage: String
 	let valueText: (Double) -> String
 
-	@State private var draft = 0.0
-
 	var body: some View {
 		VStack(alignment: .leading) {
 			LabeledContent(title) {
-				Text(valueText(draft))
+				Text(valueText(value))
 					.monospacedDigit()
 			}
 
-			Slider(value: $draft, in: range, step: step) {
+			Slider(value: $value, in: range, step: step) {
 				Text(title)
 			} minimumValueLabel: {
 				Image(systemName: smallerImage)
 			} maximumValueLabel: {
 				Image(systemName: largerImage)
-			} onEditingChanged: { isEditing in
-				if !isEditing {
-					commit()
-				}
 			}
-			.accessibilityValue(valueText(draft))
+			.accessibilityValue(valueText(value))
 		}
-		.onAppear(perform: resetDraft)
-		.onChange(of: value, resetDraft)
-	}
-
-	private func resetDraft() {
-		draft = min(max(value, range.lowerBound), range.upperBound)
-	}
-
-	private func commit() {
-		value = draft
 	}
 }

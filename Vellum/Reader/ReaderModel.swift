@@ -107,7 +107,7 @@ final class ReaderModel {
 
 	/// Records the line at the top of the screen once scrolling comes to rest.
 	func scrollingStopped() {
-		guard let layout, layout.mode == .scroll else { return }
+		guard let layout, layout.isComplete, layout.mode == .scroll else { return }
 
 		// The piece crossing the top edge of the screen.
 		let edge = scrollTopEdge + 0.5
@@ -134,12 +134,13 @@ final class ReaderModel {
 		isLayingOut = true
 
 		do {
-			let newLayout = try await BookLayout.make(book: book, pageSize: pageSize, typography: typography, mode: mode)
-			pieceTops = [:]
-			layout = newLayout
-			restoring {
-				visiblePage = newLayout.pageIndex(for: position)
-			}
+			// Show the chapter being read right away, so changing a setting updates the page while it's being changed.
+			let chapter = min(max(position.chapter, 0), max(book.chapters.count - 1, 0))
+			show(try await BookLayout.make(book: book, pageSize: pageSize, typography: typography, mode: mode, onlyChapter: chapter))
+
+			// Wait for the setting to stop changing before doing the rest of the book.
+			try await Task.sleep(for: .milliseconds(300))
+			show(try await BookLayout.make(book: book, pageSize: pageSize, typography: typography, mode: mode))
 			layoutError = nil
 		} catch is CancellationError {
 			// A newer layout replaced this one.
@@ -152,6 +153,14 @@ final class ReaderModel {
 		}
 	}
 
+	private func show(_ newLayout: BookLayout) {
+		pieceTops = [:]
+		layout = newLayout
+		restoring {
+			visiblePage = newLayout.pageIndex(for: position)
+		}
+	}
+
 	private func restoring(_ change: () -> Void) {
 		isRestoring = true
 		change()
@@ -160,7 +169,7 @@ final class ReaderModel {
 
 	/// The reader turned a page, or jumped somewhere. Scrolling is recorded separately, once it stops.
 	private func pageChanged() {
-		guard !isRestoring, let layout, layout.mode == .pages, let visiblePage, layout.pages.indices.contains(visiblePage) else { return }
+		guard !isRestoring, let layout, layout.isComplete, layout.mode == .pages, let visiblePage, layout.pages.indices.contains(visiblePage) else { return }
 
 		// Staying on the saved page, as a scroll view settling might report, keeps the exact saved spot.
 		if layout.pageIndex(for: position) == visiblePage {

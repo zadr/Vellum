@@ -22,6 +22,8 @@ nonisolated final class BookLayout: @unchecked Sendable {
 
 	let mode: ReaderMode
 	let pageSize: CGSize
+	/// False for a quick layout of one chapter, where every other chapter is a single empty page.
+	let isComplete: Bool
 	let pages: [Page]
 	/// The index of each chapter's first page.
 	let chapterStarts: [Int]
@@ -29,18 +31,20 @@ nonisolated final class BookLayout: @unchecked Sendable {
 	private let textRect: CGRect
 	private let chapters: [Chapter]
 
-	private init(mode: ReaderMode, pageSize: CGSize, textRect: CGRect, pages: [Page], chapterStarts: [Int], chapters: [Chapter]) {
+	private init(mode: ReaderMode, pageSize: CGSize, isComplete: Bool, textRect: CGRect, pages: [Page], chapterStarts: [Int], chapters: [Chapter]) {
 		self.mode = mode
 		self.pageSize = pageSize
+		self.isComplete = isComplete
 		self.textRect = textRect
 		self.pages = pages
 		self.chapterStarts = chapterStarts
 		self.chapters = chapters
 	}
 
-	/// Converts and paginates every chapter. Runs off the main actor; checks for cancellation between chapters.
+	/// Converts and paginates every chapter, or just one for a quick preview while settings change.
+	/// Runs off the main actor; checks for cancellation between chapters.
 	@concurrent
-	static func make(book: ReaderBook, pageSize: CGSize, typography: ReaderTypography, mode: ReaderMode) async throws -> BookLayout {
+	static func make(book: ReaderBook, pageSize: CGSize, typography: ReaderTypography, mode: ReaderMode, onlyChapter: Int? = nil) async throws -> BookLayout {
 		let textRect = typography.textRect(in: pageSize, mode: mode)
 		let path = CGPath(rect: textRect, transform: nil)
 		let styleSheets = StyleSheetCache()
@@ -51,6 +55,14 @@ nonisolated final class BookLayout: @unchecked Sendable {
 
 		for index in book.chapters.indices {
 			try Task.checkCancellation()
+
+			if let onlyChapter, index != onlyChapter {
+				let empty = NSAttributedString()
+				chapterStarts.append(pages.count)
+				pages.append(Page(chapter: index, location: 0, length: 0, height: pageSize.height))
+				chapters.append(Chapter(text: empty, framesetter: CTFramesetterCreateWithAttributedString(empty), anchors: [:]))
+				continue
+			}
 
 			let output = ChapterConverter.convert(book.fileURL(forChapter: index), typography: typography, textArea: textRect.size, styleSheets: styleSheets)
 			let framesetter = CTFramesetterCreateWithAttributedString(output.text)
@@ -74,7 +86,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 			chapters.append(Chapter(text: output.text, framesetter: framesetter, anchors: output.anchors))
 		}
 
-		return BookLayout(mode: mode, pageSize: pageSize, textRect: textRect, pages: pages, chapterStarts: chapterStarts, chapters: chapters)
+		return BookLayout(mode: mode, pageSize: pageSize, isComplete: onlyChapter == nil, textRect: textRect, pages: pages, chapterStarts: chapterStarts, chapters: chapters)
 	}
 
 	/// How much of a frame, from its top, its lines actually fill.
