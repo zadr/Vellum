@@ -12,7 +12,7 @@ nonisolated final class ChapterConverter {
 	}
 
 	static let imageAttribute = NSAttributedString.Key("VellumImage")
-	/// Marks the letters of a drop cap at the start of a paragraph. The value is how many lines it spans.
+	/// Marks the letters of a drop cap at the start of a paragraph. The value is its `DropCapStyle`.
 	static let dropCapAttribute = NSAttributedString.Key("VellumDropCap")
 	/// The `ParagraphFormat` for the paragraph the text belongs to.
 	static let formatAttribute = NSAttributedString.Key("VellumParagraphFormat")
@@ -39,7 +39,7 @@ nonisolated final class ChapterConverter {
 		var isPreformatted = false
 		var isOrderedList = false
 		var listCount = 0
-		var dropCapLines: Int?
+		var dropCap: DropCapStyle?
 		var smallCaps: CSSStyle.SmallCaps??
 		var textTransform: CSSStyle.TextTransform?
 		var letterSpacing: Double?
@@ -67,7 +67,7 @@ nonisolated final class ChapterConverter {
 		var alignment = CTTextAlignment.natural
 		var superscript = 0
 		var isPreformatted = false
-		var dropCapLines: Int?
+		var dropCap: DropCapStyle?
 		var smallCaps: CSSStyle.SmallCaps?
 		var textTransform = CSSStyle.TextTransform.none
 		/// In ems.
@@ -111,7 +111,7 @@ nonisolated final class ChapterConverter {
 	private var skipDepth = 0
 	private var styleText: String?
 	/// Set when a paragraph's style gives its first letter a drop cap, until that letter arrives.
-	private var pendingDropCapLines: Int?
+	private var pendingDropCap: DropCapStyle?
 
 	private var fonts: [String: CTFont] = [:]
 	private var attributeCache: [String: [NSAttributedString.Key: Any]] = [:]
@@ -236,8 +236,9 @@ nonisolated final class ChapterConverter {
 		let element = makeElement(name: name, css: css)
 		if element.block != nil {
 			finishParagraph()
-			if !isInTableCell, typography.styles.bookDropCaps, let lines = styleSheet.style(for: node, pseudoElement: "first-letter").dropCapLines {
-				pendingDropCapLines = lines
+			if !isInTableCell, typography.styles.bookDropCaps, let dropCap = DropCapStyle(styleSheet.style(for: node, pseudoElement: "first-letter")) {
+				dropCap.fitsGlyphs = true
+				pendingDropCap = dropCap
 			}
 		}
 		elements.append(element)
@@ -311,7 +312,7 @@ nonisolated final class ChapterConverter {
 
 		if closesBlock {
 			finishParagraph()
-			pendingDropCapLines = nil
+			pendingDropCap = nil
 		}
 	}
 
@@ -444,8 +445,8 @@ nonisolated final class ChapterConverter {
 		element.alignment = css.alignment ?? element.alignment
 
 		if typography.styles.bookDropCaps {
-			element.dropCapLines = css.dropCapLines
-		} else if css.dropCapLines != nil {
+			element.dropCap = DropCapStyle(css)
+		} else if css.floatsLeft == true {
 			// With drop caps off, the letter is set like the rest of the text.
 			element.fontScale = nil
 		}
@@ -483,7 +484,7 @@ nonisolated final class ChapterConverter {
 			style.alignment = element.alignment ?? style.alignment
 			style.superscript = element.superscript ?? style.superscript
 			style.isPreformatted = style.isPreformatted || element.isPreformatted
-			style.dropCapLines = element.dropCapLines ?? style.dropCapLines
+			style.dropCap = element.dropCap ?? style.dropCap
 			if let smallCaps = element.smallCaps {
 				style.smallCaps = smallCaps
 			}
@@ -506,7 +507,7 @@ nonisolated final class ChapterConverter {
 	private func attributes(for style: Style) -> [NSAttributedString.Key: Any] {
 		// The drop cap's own size doesn't matter: the typesetter draws it at a size worked out from the lines it spans.
 		var style = style
-		if style.dropCapLines != nil {
+		if style.dropCap != nil {
 			style.fontScale = 1
 		}
 
@@ -652,8 +653,8 @@ nonisolated final class ChapterConverter {
 
 		if styles.bookPageBreaks {
 			// Inherited, so the innermost element that sets each wins.
-			format.widows = elements.last { $0.css.widows != nil }?.css.widows ?? 2
-			format.orphans = elements.last { $0.css.orphans != nil }?.css.orphans ?? 2
+			format.widows = elements.last { $0.block != nil && $0.css.widows != nil }?.css.widows ?? 2
+			format.orphans = elements.last { $0.block != nil && $0.css.orphans != nil }?.css.orphans ?? 2
 			format.keepWithNext = isHeading(style.block) || elements.contains { $0.block != nil && $0.css.avoidsBreakAfter }
 		} else {
 			format.widows = 1
@@ -715,8 +716,9 @@ nonisolated final class ChapterConverter {
 		format.alignment = alignment
 
 		// Text indent is inherited, so the innermost element that sets it wins.
-		if typography.styles.bookIndents, let indent = elements.last(where: { $0.css.length("text-indent") != nil })?.css.length("text-indent") {
-			format.firstLineIndent = indent.points(fontSize: fontSize, width: textArea.width)
+		// Indents, line heights, and the like belong to blocks, and inline elements inside them can't change them.
+		if typography.styles.bookIndents, let block = elements.last(where: { $0.block != nil && $0.css.length("text-indent") != nil }), let indent = block.css.length("text-indent") {
+			format.firstLineIndent = indent.points(fontSize: block.fontSize, width: textArea.width)
 		}
 
 		self.format = format
@@ -758,14 +760,17 @@ nonisolated final class ChapterConverter {
 
 	/// The book's line height for text in the current elements, as a multiple of the font's natural line height.
 	private func bookLineHeight(fontSize: Double, style: Style) -> Double? {
-		// Line height is inherited, so the innermost element that sets it wins.
-		guard let value = elements.last(where: { $0.css.properties["line-height"] != nil })?.css.properties["line-height"]?.lowercased() else { return nil }
+		// Line height is inherited, so the innermost block that sets it wins. Lengths are fixed where they're set.
+		guard
+			let block = elements.last(where: { $0.block != nil && $0.css.properties["line-height"] != nil }),
+			let value = block.css.properties["line-height"]?.lowercased()
+		else { return nil }
 
 		let cssLineHeight: Double
 		if let number = Double(value) {
 			cssLineHeight = number
 		} else if let length = CSSLength(value), length.unit != .percent {
-			cssLineHeight = length.points(fontSize: fontSize, width: 0) / fontSize
+			cssLineHeight = length.points(fontSize: block.fontSize, width: 0) / fontSize
 		} else if let length = CSSLength(value) {
 			cssLineHeight = length.value / 100
 		} else {
@@ -820,19 +825,19 @@ nonisolated final class ChapterConverter {
 		text = transformed(text, style.textTransform)
 
 		// A drop cap only works at the very start of a paragraph; anywhere else, the letters stay in the line.
-		if let lines = style.dropCapLines, isParagraphStart {
-			output.append(dropCap(text, lines: lines, style: style))
+		if let dropCap = style.dropCap, isParagraphStart {
+			output.append(self.dropCap(text, dropCap, style: style))
 			return
 		}
 
-		if let lines = pendingDropCapLines, isParagraphStart {
-			pendingDropCapLines = nil
+		if let dropCap = pendingDropCap, isParagraphStart {
+			pendingDropCap = nil
 
 			// Like CSS's first-letter, the drop cap takes the first letter plus any punctuation before it, such as a quote mark.
 			var letters = text.prefix { !$0.isLetter && !$0.isNumber && !$0.isWhitespace }
 			if let letter = text.dropFirst(letters.count).first, letter.isLetter || letter.isNumber {
 				letters = text.prefix(letters.count + 1)
-				output.append(dropCap(String(letters), lines: lines, style: style))
+				output.append(self.dropCap(String(letters), dropCap, style: style))
 				text = String(text.dropFirst(letters.count))
 				guard !text.isEmpty else { return }
 			}
@@ -889,9 +894,9 @@ nonisolated final class ChapterConverter {
 		flush()
 	}
 
-	private func dropCap(_ letters: String, lines: Int, style: Style) -> NSAttributedString {
+	private func dropCap(_ letters: String, _ dropCap: DropCapStyle, style: Style) -> NSAttributedString {
 		var attributes = paragraphAttributes(for: style)
-		attributes[Self.dropCapAttribute] = lines
+		attributes[Self.dropCapAttribute] = dropCap
 		return NSAttributedString(string: letters, attributes: attributes)
 	}
 

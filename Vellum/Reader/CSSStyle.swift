@@ -274,11 +274,4 @@ nonisolated struct CSSStyle: Sendable {
 	var floatsLeft: Bool? {
 		value("float").map { $0 == "left" }
 	}
-
-	/// How many lines a drop cap with this style spans, if the style makes one: a large letter floated to the left.
-	var dropCapLines: Int? {
-		guard floatsLeft == true, let fontScale, fontScale >= 1.8 else { return nil }
-		// Designers size drop caps by the lines they span; about 1.5× the text size per line covers how books do it.
-		return min(max(Int((fontScale / 1.5).rounded()), 2), 4)
-	}
 }

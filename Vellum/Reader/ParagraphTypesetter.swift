@@ -155,12 +155,9 @@ nonisolated struct ParagraphTypesetter {
 		}
 
 		if let dropCap, !lines.isEmpty {
-			// The letter's baseline lines up with the baseline of the last line it spans.
+			// The letter sits where its float box puts it, measured from the top of the first line.
 			let spanned = lines.prefix(dropCap.lines)
-			let last = spanned[spanned.endIndex - 1]
-			let baseline = spanned.dropLast().reduce(0) { $0 + $1.height } + last.height - last.descent
-
-			lines[0].dropCap = TypesetLine.DropCap(line: dropCap.line, x: style.indent, baseline: baseline)
+			lines[0].dropCap = TypesetLine.DropCap(line: dropCap.line, x: style.indent, baseline: dropCap.baseline)
 			lines[0].keepWithNext = spanned.count - 1
 			lines[0] = lines[0].including(paragraphOffset..<(lines[0].location + lines[0].length))
 		}
@@ -218,35 +215,51 @@ nonisolated struct ParagraphTypesetter {
 		return typeset
 	}
 
-	/// A paragraph's drop cap, set at the size that makes its capital as tall as the lines it spans.
-	private static func dropCap(in paragraph: NSAttributedString, lineHeight: Double) -> (line: CTLine, length: Int, lines: Int, width: Double)? {
+	/// A paragraph's drop cap, set as the book's styles describe it: at its own size, with the lines beside it
+	/// narrowed for as far down as the floated letter reaches.
+	private static func dropCap(in paragraph: NSAttributedString, lineHeight: Double) -> (line: CTLine, length: Int, lines: Int, width: Double, baseline: Double)? {
 		var range = NSRange()
 		guard
 			paragraph.length > 1,
-			let lines = paragraph.attribute(ChapterConverter.dropCapAttribute, at: 0, effectiveRange: &range) as? Int,
+			let style = paragraph.attribute(ChapterConverter.dropCapAttribute, at: 0, effectiveRange: &range) as? DropCapStyle,
 			range.length < paragraph.length,
 			let attribute = paragraph.attribute(NSAttributedString.Key(kCTFontAttributeName as String), at: range.length, effectiveRange: nil)
 		else { return nil }
 
-		// Measured against the text after the cap, which is what the cap has to line up with.
+		// Sized against the text after the cap, which is the paragraph's text.
 		let bodyFont = attribute as! CTFont
 		let bodySize = CTFontGetSize(bodyFont)
 		let lineAdvance = ((CTFontGetAscent(bodyFont) + CTFontGetDescent(bodyFont)) * lineHeight).rounded()
-		let capHeightRatio = CTFontGetCapHeight(bodyFont) / bodySize
-		guard capHeightRatio > 0 else { return nil }
 
-		let capHeight = Double(lines - 1) * lineAdvance + CTFontGetCapHeight(bodyFont)
-		let capFont = CTFontCreateCopyWithAttributes(bodyFont, capHeight / capHeightRatio, nil, nil)
-
+		let size = bodySize * style.scale
+		let capFont = CTFontCreateCopyWithAttributes(bodyFont, size, nil, nil)
 		let letters = NSMutableAttributedString(attributedString: paragraph.attributedSubstring(from: range))
 		let fullRange = NSRange(location: 0, length: letters.length)
 		letters.addAttribute(NSAttributedString.Key(kCTFontAttributeName as String), value: capFont, range: fullRange)
 		letters.removeAttribute(NSAttributedString.Key(kCTSuperscriptAttributeName as String), range: fullRange)
-
 		let line = CTLineCreateWithAttributedString(letters)
-		let width = CTLineGetTypographicBounds(line, nil, nil, nil) + bodySize * 0.3
-		return (line, range.length, lines, width.rounded(.up))
+
+		// The float's box, as CSS lays it out: the letter's line box, with half the extra leading above the glyphs,
+		// plus its margins.
+		let ascent: Double, descent: Double, boxHeight: Double
+		if style.fitsGlyphs {
+			let glyphs = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+			ascent = glyphs.maxY
+			descent = max(-glyphs.minY, 0)
+			boxHeight = ascent + descent
+		} else {
+			ascent = CTFontGetAscent(capFont)
+			descent = CTFontGetDescent(capFont)
+			boxHeight = style.lineHeight.map { $0 * size } ?? ascent + descent + CTFontGetLeading(capFont)
+		}
+		let baseline = style.marginTop * size + (boxHeight - (ascent + descent)) / 2 + ascent
+		let floatHeight = style.marginTop * size + boxHeight + style.marginBottom * size
+		let lines = max(Int((floatHeight / lineAdvance).rounded(.up)), 1)
+
+		let width = CTLineGetTypographicBounds(line, nil, nil, nil) + style.marginRight * size
+		return (line, range.length, lines, width.rounded(.up), baseline)
 	}
+
 
 	// MARK: Breaking
 
