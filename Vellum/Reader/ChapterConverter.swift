@@ -40,6 +40,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var dropCapLines: Int?
 		var smallCaps: CSSStyle.SmallCaps??
 		var textTransform: CSSStyle.TextTransform?
+		var letterSpacing: Double?
 		var css = CSSStyle()
 		/// The element's text size in points, for resolving `em` lengths.
 		var fontSize = 0.0
@@ -57,6 +58,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var dropCapLines: Int?
 		var smallCaps: CSSStyle.SmallCaps?
 		var textTransform = CSSStyle.TextTransform.none
+		/// In ems.
+		var letterSpacing = 0.0
 	}
 
 	private static let blockNames: Set<String> = [
@@ -315,6 +318,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		if typography.styles.bookTextEffects {
 			element.smallCaps = css.smallCaps
 			element.textTransform = css.textTransform
+			element.letterSpacing = css.letterSpacing.map { min(max($0, -0.1), 0.5) }
 		}
 		element.css = css
 		return element
@@ -336,6 +340,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 				style.smallCaps = smallCaps
 			}
 			style.textTransform = element.textTransform ?? style.textTransform
+			style.letterSpacing = element.letterSpacing ?? style.letterSpacing
 		}
 
 		style.fontScale = min(max(style.fontScale, 0.6), 2.5)
@@ -349,7 +354,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			style.fontScale = 1
 		}
 
-		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)"
+		let key = "\(style.block)-\(style.isBold)-\(style.isItalic)-\(style.fontScale)-\(style.superscript)-\(style.letterSpacing)"
 		if let attributes = attributeCache[key] {
 			return attributes
 		}
@@ -364,6 +369,10 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		if style.superscript != 0 {
 			attributes[NSAttributedString.Key(kCTSuperscriptAttributeName as String)] = style.superscript
+		}
+
+		if style.letterSpacing != 0 {
+			attributes[NSAttributedString.Key(kCTTrackingAttributeName as String)] = style.letterSpacing * typography.size * style.fontScale
 		}
 
 		attributeCache[key] = attributes

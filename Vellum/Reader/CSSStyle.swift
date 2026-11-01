@@ -119,6 +119,15 @@ nonisolated struct CSSStyle: Sendable {
 		}
 	}
 
+	/// Extra space between letters, in ems. `nil` when not set; zero when set to normal.
+	var letterSpacing: Double? {
+		guard let value = value("letter-spacing") else { return nil }
+		if value == "normal" { return 0 }
+		guard let length = CSSLength(value), length.unit != .percent else { return nil }
+		// Points are taken relative to the 16-pixel default, so the spacing scales with the text.
+		return length.unit == .em ? length.value : length.value / 16
+	}
+
 	var isHidden: Bool {
 		value("display") == "none"
 	}
