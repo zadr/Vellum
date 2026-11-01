@@ -284,6 +284,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			NSAttributedString.Key(kCTParagraphStyleAttributeName as String): paragraphStyle(for: style),
 			// Text takes its color from the page, so changing themes doesn't need a new layout.
 			NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
+			// Standard ligatures, like fi and fl, wherever the font has them.
+			NSAttributedString.Key(kCTLigatureAttributeName as String): 1,
 		]
 
 		if style.superscript != 0 {
@@ -334,6 +336,8 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		if style.block == .image {
 			alignment = .center
+		} else if alignment == .natural, style.block != .preformatted, !isHeading(style.block) {
+			alignment = typography.isJustified ? .justified : .natural
 		}
 
 		let paragraphStyle = withUnsafeBytes(of: &alignment) { alignmentBytes in
@@ -353,6 +357,10 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		paragraphStyles[key] = paragraphStyle
 		return paragraphStyle
+	}
+
+	private func isHeading(_ block: Block) -> Bool {
+		if case .heading = block { true } else { false }
 	}
 
 	// MARK: Building the text

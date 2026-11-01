@@ -11,6 +11,7 @@ struct ReaderAppearanceSheet: View {
 	@AppStorage("reader-line-height") private var lineHeight = ReaderTypography.defaultLineHeight
 	@AppStorage("reader-paragraph-spacing") private var paragraphSpacing = ReaderTypography.defaultParagraphSpacing
 	@AppStorage("reader-column-width") private var columnWidth = ReaderTypography.defaultColumnWidth
+	@AppStorage("reader-justified") private var isJustified = true
 
 	/// The widest column the current screen can hold.
 	let maximumColumnWidth: Double
@@ -81,6 +82,8 @@ struct ReaderAppearanceSheet: View {
 				}
 
 				Section("Page") {
+					Toggle("Justify Text", isOn: $isJustified)
+
 					ReaderSettingSlider(
 						title: "Column Width",
 						value: $columnWidth,
@@ -128,6 +131,7 @@ struct ReaderAppearanceSheet: View {
 		lineHeight = ReaderTypography.defaultLineHeight
 		paragraphSpacing = ReaderTypography.defaultParagraphSpacing
 		columnWidth = ReaderTypography.defaultColumnWidth
+		isJustified = true
 	}
 
 	private func close() {

@@ -10,6 +10,7 @@ struct ReaderContent: View {
 	@AppStorage("reader-line-height") private var lineHeight = ReaderTypography.defaultLineHeight
 	@AppStorage("reader-paragraph-spacing") private var paragraphSpacing = ReaderTypography.defaultParagraphSpacing
 	@AppStorage("reader-column-width") private var columnWidth = ReaderTypography.defaultColumnWidth
+	@AppStorage("reader-justified") private var isJustified = true
 	@ScaledMetric(relativeTo: .body) private var baseTextSize = Design.readerTextSize
 
 	let model: ReaderModel
@@ -77,7 +78,8 @@ struct ReaderContent: View {
 			size: (baseTextSize * textScale).rounded(),
 			lineHeight: lineHeight,
 			paragraphSpacing: paragraphSpacing,
-			columnWidth: columnWidth
+			columnWidth: columnWidth,
+			isJustified: isJustified
 		)
 	}
 

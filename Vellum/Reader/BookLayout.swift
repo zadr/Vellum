@@ -2,7 +2,7 @@ import CoreGraphics
 import CoreText
 import Foundation
 
-/// A whole book broken into pages for one page size, typography, and reading mode.
+/// A whole book set into lines and broken into pages for one page size, typography, and reading mode.
 /// In scroll mode the "pages" are screen-sized pieces of text that stack seamlessly, each trimmed to the lines it holds.
 nonisolated final class BookLayout: @unchecked Sendable {
 	struct Page: Sendable {
@@ -12,11 +12,15 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		let length: Int
 		/// How tall the page is drawn. Every page is a screen tall, except pieces in scroll mode.
 		let height: Double
+		/// The chapter's first line on this page.
+		let firstLine: Int
+		/// Where the top of each of the page's lines sits, measured down from the top of the page.
+		let lineTops: [Double]
 	}
 
 	private struct Chapter {
 		let text: NSAttributedString
-		let framesetter: CTFramesetter
+		let lines: [TypesetLine]
 		let anchors: [String: Int]
 	}
 
@@ -41,12 +45,12 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		self.chapters = chapters
 	}
 
-	/// Converts and paginates every chapter, or just one for a quick preview while settings change.
+	/// Converts, sets, and paginates every chapter, or just one for a quick preview while settings change.
 	/// Runs off the main actor; checks for cancellation between chapters.
 	@concurrent
 	static func make(book: ReaderBook, pageSize: CGSize, typography: ReaderTypography, mode: ReaderMode, onlyChapter: Int? = nil) async throws -> BookLayout {
 		let textRect = typography.textRect(in: pageSize, mode: mode)
-		let path = CGPath(rect: textRect, transform: nil)
+		let typesetter = ParagraphTypesetter(width: textRect.width)
 		let styleSheets = StyleSheetCache()
 
 		var pages = [Page]()
@@ -55,53 +59,66 @@ nonisolated final class BookLayout: @unchecked Sendable {
 
 		for index in book.chapters.indices {
 			try Task.checkCancellation()
+			chapterStarts.append(pages.count)
 
 			if let onlyChapter, index != onlyChapter {
-				let empty = NSAttributedString()
-				chapterStarts.append(pages.count)
-				pages.append(Page(chapter: index, location: 0, length: 0, height: pageSize.height))
-				chapters.append(Chapter(text: empty, framesetter: CTFramesetterCreateWithAttributedString(empty), anchors: [:]))
+				chapters.append(Chapter(text: NSAttributedString(), lines: [], anchors: [:]))
+				pages.append(Page(chapter: index, location: 0, length: 0, height: pageSize.height, firstLine: 0, lineTops: []))
 				continue
 			}
 
 			let output = ChapterConverter.convert(book.fileURL(forChapter: index), typography: typography, textArea: textRect.size, styleSheets: styleSheets)
-			let framesetter = CTFramesetterCreateWithAttributedString(output.text)
-			chapterStarts.append(pages.count)
-
-			var location = 0
-			repeat {
-				let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: location, length: 0), path, nil)
-				var length = CTFrameGetVisibleStringRange(frame).length
-
-				// Something too big to fit on any page would otherwise stop pagination; skip past it.
-				if length == 0 {
-					length = min(1, output.text.length - location)
-				}
-
-				let height = mode == .pages ? pageSize.height : usedHeight(of: frame, in: textRect)
-				pages.append(Page(chapter: index, location: location, length: length, height: height))
-				location += length
-			} while location < output.text.length
-
-			chapters.append(Chapter(text: output.text, framesetter: framesetter, anchors: output.anchors))
+			let lines = typesetter.lines(for: output.text)
+			pages += paginate(lines, chapter: index, textLength: output.text.length, textRect: textRect, pageSize: pageSize, mode: mode)
+			chapters.append(Chapter(text: output.text, lines: lines, anchors: output.anchors))
 		}
 
 		return BookLayout(mode: mode, pageSize: pageSize, isComplete: onlyChapter == nil, textRect: textRect, pages: pages, chapterStarts: chapterStarts, chapters: chapters)
 	}
 
-	/// How much of a frame, from its top, its lines actually fill.
-	private static func usedHeight(of frame: CTFrame, in rect: CGRect) -> Double {
-		let lines = CTFrameGetLines(frame) as? [CTLine] ?? []
-		guard let last = lines.last else { return 1 }
+	/// Stacks a chapter's lines onto pages. Paragraph spacing is dropped at the top of a page, but kept between
+	/// scroll pieces so they join seamlessly.
+	private static func paginate(_ lines: [TypesetLine], chapter: Int, textLength: Int, textRect: CGRect, pageSize: CGSize, mode: ReaderMode) -> [Page] {
+		var pages = [Page]()
+		var first = 0
+		var tops = [Double]()
+		var y = 0.0
 
-		var origins = [CGPoint](repeating: .zero, count: lines.count)
-		CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+		func finishPage(at end: Int) {
+			let location = pages.isEmpty ? 0 : lines[first].location
+			let pageEnd = end < lines.count ? lines[end].location : textLength
+			var lineTops = tops.map { $0 + textRect.minY }
 
-		var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-		CTLineGetTypographicBounds(last, &ascent, &descent, &leading)
+			// A page holding only an image, like a cover or a map, looks best centered.
+			if mode == .pages, lineTops.count == 1, !ImageRun.images(in: lines[first].line).isEmpty {
+				lineTops[0] = textRect.minY + max((textRect.height - lines[first].height) / 2, 0)
+			}
 
-		let bottom = (origins.last?.y ?? 0) - descent
-		return max((rect.height - bottom).rounded(.up), 1)
+			let height = mode == .pages ? pageSize.height : max((textRect.minY + y).rounded(.up), 1)
+			pages.append(Page(chapter: chapter, location: location, length: max(pageEnd - location, 0), height: height, firstLine: first, lineTops: lineTops))
+		}
+
+		for (index, line) in lines.enumerated() {
+			var gap = index == first && mode == .pages ? 0 : line.spaceBefore
+
+			if index > first, y + gap + line.height > textRect.height {
+				finishPage(at: index)
+				first = index
+				tops = []
+				y = 0
+				gap = mode == .pages ? 0 : line.spaceBefore
+			}
+
+			tops.append(y + gap)
+			y += gap + line.height
+		}
+
+		if lines.isEmpty {
+			pages.append(Page(chapter: chapter, location: 0, length: textLength, height: mode == .pages ? pageSize.height : 1, firstLine: 0, lineTops: []))
+		} else {
+			finishPage(at: lines.count)
+		}
+		return pages
 	}
 
 	// MARK: Finding pages
@@ -151,33 +168,20 @@ nonisolated final class BookLayout: @unchecked Sendable {
 	/// The first character on the line at a distance from the top of a page.
 	func characterOffset(inPage index: Int, atY y: Double) -> Int {
 		let page = pages[index]
-		let line = lineGeometry(inPage: index).first { $0.bottom > y }
-		return line?.location ?? page.location + page.length
+		let lines = chapters[page.chapter].lines
+
+		for (line, top) in zip(lines[page.firstLine...], page.lineTops) where top + line.height > y {
+			return line.location
+		}
+		return page.location + page.length
 	}
 
 	/// How far from the top of a page the line holding a character starts.
 	func y(ofCharacter offset: Int, inPage index: Int) -> Double {
-		let line = lineGeometry(inPage: index).last { $0.location <= offset }
-		return max(line?.top ?? 0, 0)
-	}
-
-	/// Where each line of a page sits, measured down from the top of the page as it's drawn.
-	private func lineGeometry(inPage index: Int) -> [(location: Int, top: Double, bottom: Double)] {
 		let page = pages[index]
-		let frame = CTFramesetterCreateFrame(chapters[page.chapter].framesetter, CFRange(location: page.location, length: page.length), CGPath(rect: textRect, transform: nil), nil)
-		let lines = CTFrameGetLines(frame) as? [CTLine] ?? []
-		var origins = [CGPoint](repeating: .zero, count: lines.count)
-		CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
-
-		// Matches the flip in `draw`: scroll pieces are aligned to the top of their frame.
-		let top = mode == .scroll ? textRect.maxY : page.height
-
-		return zip(lines, origins).map { line, origin in
-			var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-			CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
-			let baseline = top - (textRect.minY + origin.y)
-			return (CTLineGetStringRange(line).location, baseline - ascent, baseline + descent)
-		}
+		let lines = chapters[page.chapter].lines
+		let placed = Array(zip(lines[page.firstLine...], page.lineTops))
+		return placed.last { $0.0.location <= offset }?.1 ?? 0
 	}
 
 	func pageIndex(for entry: ReaderContentsEntry) -> Int {
@@ -200,9 +204,7 @@ nonisolated final class BookLayout: @unchecked Sendable {
 	/// Draws a page into a context the page's size, with the origin at the top left as SwiftUI's are.
 	func draw(page index: Int, in context: CGContext, textColor: CGColor) {
 		let page = pages[index]
-		let chapter = chapters[page.chapter]
-		let path = CGPath(rect: textRect, transform: nil)
-		let frame = CTFramesetterCreateFrame(chapter.framesetter, CFRange(location: page.location, length: page.length), path, nil)
+		let lines = chapters[page.chapter].lines
 
 		context.saveGState()
 		defer { context.restoreGState() }
@@ -213,38 +215,11 @@ nonisolated final class BookLayout: @unchecked Sendable {
 		context.textMatrix = .identity
 		context.setFillColor(textColor)
 
-		// A scroll piece is trimmed to its lines, so line its top up with the top of the frame.
-		if mode == .scroll {
-			context.translateBy(x: 0, y: page.height - textRect.maxY)
-		}
-
-		let lines = CTFrameGetLines(frame) as? [CTLine] ?? []
-		var origins = [CGPoint](repeating: .zero, count: lines.count)
-		CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
-
-		// A page holding only an image, like a cover or a map, looks best centered.
-		if mode == .pages, lines.count == 1, let image = images(in: lines[0]).first {
-			context.translateBy(x: 0, y: -(textRect.height - image.run.size.height) / 2)
-		}
-
-		CTFrameDraw(frame, context)
-		drawImages(in: lines, origins: origins, context: context)
-	}
-
-	private func images(in line: CTLine) -> [(run: ImageRun, offset: Double)] {
-		(CTLineGetGlyphRuns(line) as? [CTRun] ?? []).compactMap { run in
-			let attributes = CTRunGetAttributes(run) as NSDictionary
-			guard let image = attributes[ChapterConverter.imageAttribute.rawValue] as? ImageRun else { return nil }
-			return (image, CTLineGetOffsetForStringIndex(line, CTRunGetStringRange(run).location, nil))
-		}
-	}
-
-	private func drawImages(in lines: [CTLine], origins: [CGPoint], context: CGContext) {
-		for (line, origin) in zip(lines, origins) {
-			for image in images(in: line) {
-				let rect = CGRect(x: textRect.minX + origin.x + image.offset, y: textRect.minY + origin.y, width: image.run.size.width, height: image.run.size.height)
-				context.draw(image.run.image, in: rect)
-			}
+		for (line, top) in zip(lines[page.firstLine...], page.lineTops) {
+			let origin = CGPoint(x: textRect.minX + line.x, y: page.height - (top + line.height - line.descent))
+			context.textPosition = origin
+			CTLineDraw(line.line, context)
+			ImageRun.draw(in: line.line, at: origin, context: context)
 		}
 	}
 }

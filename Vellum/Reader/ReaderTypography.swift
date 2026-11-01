@@ -28,20 +28,22 @@ nonisolated struct ReaderTypography: Equatable, Sendable {
 	var paragraphSpacing = Self.defaultParagraphSpacing
 	/// The widest a line of text may be, in points. Narrower screens use all the room they have.
 	var columnWidth = Self.defaultColumnWidth
+	/// Whether body text is set flush on both sides. Headings and centered text keep their own alignment.
+	var isJustified = true
 
 	/// The widest column that fits on a page of this width.
 	static func maximumColumnWidth(forPageWidth width: Double) -> Double {
 		max(width - minimumMargin * 2, minimumColumnWidth)
 	}
 
-	/// The area text is set in on a page, in Core Text's bottom-left-origin coordinates.
+	/// The area text is set in on a page, measured from the page's top left.
 	func textRect(in pageSize: CGSize, mode: ReaderMode) -> CGRect {
 		let width = min(columnWidth, Self.maximumColumnWidth(forPageWidth: pageSize.width))
 		let x = max((pageSize.width - width) / 2, 0)
 
 		switch mode {
 		case .pages:
-			return CGRect(x: x, y: Self.bottomMargin, width: width, height: max(pageSize.height - Self.topMargin - Self.bottomMargin, 1))
+			return CGRect(x: x, y: Self.topMargin, width: width, height: max(pageSize.height - Self.topMargin - Self.bottomMargin, 1))
 		case .scroll:
 			// Scrolling text is cut into screen-sized pieces that sit edge to edge, so there are no vertical margins.
 			return CGRect(x: x, y: 0, width: width, height: max(pageSize.height, 1))
