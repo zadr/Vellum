@@ -102,6 +102,23 @@ nonisolated struct CSSStyle: Sendable {
 		return .some(nil)
 	}
 
+	enum TextTransform: Sendable {
+		case none
+		case uppercase
+		case lowercase
+		case capitalize
+	}
+
+	var textTransform: TextTransform? {
+		switch value("text-transform") {
+		case "uppercase": .uppercase
+		case "lowercase": .lowercase
+		case "capitalize": .capitalize
+		case "none": TextTransform.none
+		default: nil
+		}
+	}
+
 	var isHidden: Bool {
 		value("display") == "none"
 	}

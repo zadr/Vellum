@@ -39,6 +39,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var listCount = 0
 		var dropCapLines: Int?
 		var smallCaps: CSSStyle.SmallCaps??
+		var textTransform: CSSStyle.TextTransform?
 		var css = CSSStyle()
 		/// The element's text size in points, for resolving `em` lengths.
 		var fontSize = 0.0
@@ -55,6 +56,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		var isPreformatted = false
 		var dropCapLines: Int?
 		var smallCaps: CSSStyle.SmallCaps?
+		var textTransform = CSSStyle.TextTransform.none
 	}
 
 	private static let blockNames: Set<String> = [
@@ -312,6 +314,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 		}
 		if typography.styles.bookTextEffects {
 			element.smallCaps = css.smallCaps
+			element.textTransform = css.textTransform
 		}
 		element.css = css
 		return element
@@ -332,6 +335,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			if let smallCaps = element.smallCaps {
 				style.smallCaps = smallCaps
 			}
+			style.textTransform = element.textTransform ?? style.textTransform
 		}
 
 		style.fontScale = min(max(style.fontScale, 0.6), 2.5)
@@ -562,6 +566,7 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 
 		let style = currentStyle()
 		let isParagraphStart = endsAtLineStart
+		text = transformed(text, style.textTransform)
 
 		// A drop cap only works at the very start of a paragraph; anywhere else, the letters stay in the line.
 		if let lines = style.dropCapLines, isParagraphStart {
@@ -586,6 +591,24 @@ nonisolated final class ChapterConverter: NSObject, XMLParserDelegate {
 			appendSmallCaps(text, smallCaps, style: style)
 		} else {
 			output.append(NSAttributedString(string: text, attributes: paragraphAttributes(for: style)))
+		}
+	}
+
+	private func transformed(_ text: String, _ transform: CSSStyle.TextTransform) -> String {
+		switch transform {
+		case .none:
+			return text
+		case .uppercase:
+			return text.uppercased()
+		case .lowercase:
+			return text.lowercased()
+		case .capitalize:
+			// A word can be split across elements, so whether a letter starts one depends on the text before it.
+			var startsWord = lastCharacter.map { Character(UnicodeScalar($0) ?? " ").isWhitespace } ?? true
+			return String(text.map { character in
+				defer { startsWord = character.isWhitespace || character == "—" || character == "-" }
+				return startsWord && character.isLetter ? Character(character.uppercased()) : character
+			})
 		}
 	}
 
