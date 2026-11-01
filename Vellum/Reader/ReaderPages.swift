@@ -28,6 +28,12 @@ struct ReaderPages: View {
 		}
 		.scrollTargetBehavior(.paging)
 		.scrollPosition(id: $model.visiblePage)
+		.onScrollPhaseChange { oldPhase, newPhase in
+			// Only a swipe the reader made counts; the scroller also moves itself after a relayout.
+			if newPhase == .idle, oldPhase == .interacting || oldPhase == .decelerating {
+				model.swipeEnded()
+			}
+		}
 		.scrollIndicators(.hidden)
 		// A new layout has different pages, so start a fresh scroll view at the reader's place.
 		.id(ObjectIdentifier(layout))

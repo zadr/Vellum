@@ -19,14 +19,12 @@ final class ReaderModel {
 	private(set) var backStack: [Int] = []
 
 	/// The page scrolled into view. Optional because that's what scroll positions bind to.
-	var visiblePage: Int? {
-		didSet { pageChanged() }
-	}
+	/// Set by the reader's own page turns and by the page scroller. Only movements the reader makes are saved; the
+	/// scroller also reports pages as it settles after a relayout, and those mustn't replace the saved place.
+	var visiblePage: Int?
 
 	/// Where the reader is. Only changes when they move, so laying the book out again never loses their place.
 	@ObservationIgnored private var position: ReadingPosition
-	/// Set while the model itself moves to the saved position, so that isn't mistaken for the reader moving.
-	@ObservationIgnored private var isRestoring = false
 	/// Where each scroll piece on screen starts, relative to the top of the scroll view.
 	@ObservationIgnored private var pieceTops: [Int: Double] = [:]
 	/// Where a piece scrolled to the top of the screen sits, in the same terms as `pieceTops`.
@@ -39,6 +37,7 @@ final class ReaderModel {
 		self.position = position ?? ReadingPosition(chapter: 0, progression: 0)
 		self.onPositionChange = onPositionChange
 	}
+
 
 	var currentPage: Int {
 		visiblePage ?? 0
@@ -74,10 +73,12 @@ final class ReaderModel {
 	func nextPage() {
 		guard let layout else { return }
 		visiblePage = min(currentPage + 1, layout.pages.count - 1)
+		readerMoved()
 	}
 
 	func previousPage() {
 		visiblePage = max(currentPage - 1, 0)
+		readerMoved()
 	}
 
 	func toggleChrome() {
@@ -104,6 +105,7 @@ final class ReaderModel {
 	private func jump(to page: Int) {
 		visiblePage = page
 		jump = (page, (jump?.number ?? 0) + 1)
+		readerMoved()
 	}
 
 	func go(to entry: ReaderContentsEntry) {
@@ -134,7 +136,13 @@ final class ReaderModel {
 		pieceTops[index]
 	}
 
-	/// Records the line at the top of the screen once scrolling comes to rest.
+	/// The reader swiped to a page, in page mode. Called when the swipe settles.
+	func swipeEnded() {
+		guard layout?.mode == .pages else { return }
+		readerMoved()
+	}
+
+	/// Records the line at the top of the screen once scrolling the reader did comes to rest.
 	func scrollingStopped() {
 		guard let layout, layout.isComplete, layout.mode == .scroll else { return }
 
@@ -146,9 +154,7 @@ final class ReaderModel {
 		guard let (piece, top) = crossing else { return }
 
 		let offset = layout.characterOffset(inPage: piece, atY: scrollTopEdge - top)
-		restoring {
-			visiblePage = piece
-		}
+		visiblePage = piece
 		save(layout.position(forPage: piece, offset: offset))
 	}
 
@@ -187,22 +193,14 @@ final class ReaderModel {
 		// Page numbers mean something different in a new layout.
 		backStack = []
 		layout = newLayout
-		restoring {
-			visiblePage = newLayout.pageIndex(for: position)
-		}
+		visiblePage = newLayout.pageIndex(for: position)
 	}
 
-	private func restoring(_ change: () -> Void) {
-		isRestoring = true
-		change()
-		isRestoring = false
-	}
+	/// The reader turned a page, or jumped somewhere in either mode. Scrolling is recorded once it stops.
+	private func readerMoved() {
+		guard let layout, layout.isComplete, let visiblePage, layout.pages.indices.contains(visiblePage) else { return }
 
-	/// The reader turned a page, or jumped somewhere. Scrolling is recorded separately, once it stops.
-	private func pageChanged() {
-		guard !isRestoring, let layout, layout.isComplete, layout.mode == .pages, let visiblePage, layout.pages.indices.contains(visiblePage) else { return }
-
-		// Staying on the saved page, as a scroll view settling might report, keeps the exact saved spot.
+		// Staying on the saved page, as a swipe that springs back does, keeps the exact saved spot.
 		if layout.pageIndex(for: position) == visiblePage {
 			return
 		}

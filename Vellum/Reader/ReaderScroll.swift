@@ -35,8 +35,9 @@ struct ReaderScroll: View {
 		} action: { _, offset in
 			scrollOffset = offset
 		}
-		.onScrollPhaseChange { _, phase in
-			if phase == .idle {
+		.onScrollPhaseChange { oldPhase, newPhase in
+			// Only scrolling the reader did counts, not the scroll back to their place after a relayout.
+			if newPhase == .idle, oldPhase == .interacting || oldPhase == .decelerating {
 				model.scrollingStopped()
 			}
 		}
