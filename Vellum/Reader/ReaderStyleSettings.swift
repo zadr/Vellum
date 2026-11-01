@@ -1,8 +1,8 @@
 import Foundation
 
 /// Which parts of a book's own styling the reader follows. Everything follows the book unless overridden.
-nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
-	enum Justification: String, Codable, CaseIterable, Identifiable, Sendable {
+nonisolated struct ReaderStyleSettings: Equatable, Sendable {
+	enum Justification: String, CaseIterable, Identifiable, Sendable {
 		case book
 		case justified
 		case ragged
@@ -43,39 +43,40 @@ nonisolated struct ReaderStyleSettings: Codable, Equatable, Sendable {
 	/// Start a new page where the book asks, and keep lines together as it asks.
 	var bookPageBreaks = true
 
-	private enum CodingKeys: String, CodingKey {
-		case bookLineHeight, bookParagraphSpacing, justification, bookTextSizes, bookDropCaps, bookIndents, bookMargins, bookTextEffects, bookFonts, bookBorders, bookTables, bookPageBreaks
-	}
-
 	init() {}
 
-	init(from decoder: any Decoder) throws {
-		// Settings added later decode to their defaults rather than failing the whole value.
-		let container = try decoder.container(keyedBy: CodingKeys.self)
-		let defaults = ReaderStyleSettings()
-		bookLineHeight = try container.decodeIfPresent(Bool.self, forKey: .bookLineHeight) ?? defaults.bookLineHeight
-		bookParagraphSpacing = try container.decodeIfPresent(Bool.self, forKey: .bookParagraphSpacing) ?? defaults.bookParagraphSpacing
-		justification = try container.decodeIfPresent(Justification.self, forKey: .justification) ?? defaults.justification
-		bookTextSizes = try container.decodeIfPresent(Bool.self, forKey: .bookTextSizes) ?? defaults.bookTextSizes
-		bookDropCaps = try container.decodeIfPresent(Bool.self, forKey: .bookDropCaps) ?? defaults.bookDropCaps
-		bookIndents = try container.decodeIfPresent(Bool.self, forKey: .bookIndents) ?? defaults.bookIndents
-		bookMargins = try container.decodeIfPresent(Bool.self, forKey: .bookMargins) ?? defaults.bookMargins
-		bookTextEffects = try container.decodeIfPresent(Bool.self, forKey: .bookTextEffects) ?? defaults.bookTextEffects
-		bookFonts = try container.decodeIfPresent(Bool.self, forKey: .bookFonts) ?? defaults.bookFonts
-		bookBorders = try container.decodeIfPresent(Bool.self, forKey: .bookBorders) ?? defaults.bookBorders
-		bookTables = try container.decodeIfPresent(Bool.self, forKey: .bookTables) ?? defaults.bookTables
-		bookPageBreaks = try container.decodeIfPresent(Bool.self, forKey: .bookPageBreaks) ?? defaults.bookPageBreaks
-	}
+	/// The switches, by the names they're stored under.
+	private static var switches: [(String, WritableKeyPath<Self, Bool>)] { [
+		("bookLineHeight", \.bookLineHeight), ("bookParagraphSpacing", \.bookParagraphSpacing),
+		("bookTextSizes", \.bookTextSizes), ("bookDropCaps", \.bookDropCaps), ("bookIndents", \.bookIndents),
+		("bookMargins", \.bookMargins), ("bookTextEffects", \.bookTextEffects), ("bookFonts", \.bookFonts),
+		("bookBorders", \.bookBorders), ("bookTables", \.bookTables), ("bookPageBreaks", \.bookPageBreaks),
+	] }
 }
 
-/// Stored in `@AppStorage` as JSON.
+/// Stored in `@AppStorage` as a JSON object. Not `Codable`: a type that's both `Codable` and `RawRepresentable`
+/// encodes itself through `rawValue`, which loops forever. Settings missing from the stored value keep their defaults.
 extension ReaderStyleSettings: RawRepresentable {
 	init?(rawValue: String) {
-		guard let value = try? JSONDecoder().decode(Self.self, from: Data(rawValue.utf8)) else { return nil }
-		self = value
+		guard let object = try? JSONSerialization.jsonObject(with: Data(rawValue.utf8)) as? [String: Any] else { return nil }
+
+		self.init()
+		for (name, keyPath) in Self.switches {
+			if let value = object[name] as? Bool {
+				self[keyPath: keyPath] = value
+			}
+		}
+		if let value = (object["justification"] as? String).flatMap(Justification.init) {
+			justification = value
+		}
 	}
 
 	var rawValue: String {
-		(try? String(decoding: JSONEncoder().encode(self), as: UTF8.self)) ?? "{}"
+		var object: [String: Any] = ["justification": justification.rawValue]
+		for (name, keyPath) in Self.switches {
+			object[name] = self[keyPath: keyPath]
+		}
+		let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
+		return String(decoding: data, as: UTF8.self)
 	}
 }
